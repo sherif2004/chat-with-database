@@ -1,9 +1,9 @@
 from sqlalchemy import create_engine
 
-from app.config import DATABASE_URL
+from app.config import settings
 
-# Railway PostgreSQL
+# PostgreSQL (Supabase)
 engine = create_engine(
-    DATABASE_URL,
+    settings.database_url,
     pool_pre_ping=True
 )

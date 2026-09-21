@@ -1,11 +1,23 @@
-import os
+from pathlib import Path
 
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
+ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
-AZURE_OPENAI_API_KEY = os.environ["AZURE_OPENAI_API_KEY"]
-AZURE_OPENAI_ENDPOINT = os.environ["AZURE_OPENAI_ENDPOINT"]
-AZURE_OPENAI_DEPLOYMENT = os.environ["AZURE_OPENAI_DEPLOYMENT"]
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
+
+    azure_openai_api_key: str
+    azure_openai_endpoint: str
+    azure_openai_deployment: str
+
+    database_url: str
+
+    # Guardrails / limits
+    max_question_length: int = 500
+    max_rows: int = 100
+    statement_timeout_ms: int = 10000
+
+
+settings = Settings()

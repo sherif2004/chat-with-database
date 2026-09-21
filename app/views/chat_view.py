@@ -1,11 +1,43 @@
-from pydantic import BaseModel
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, Field
+
+from app.timing import StepTimings
 
 
 class ChatRequest(BaseModel):
     question: str
+    # auto: single values are humanized, lists/rankings come back as a table
+    # text: always humanize the result / table: always return a table
+    format: Literal["auto", "text", "table"] = "auto"
+
+
+class MessageResult(BaseModel):
+    type: Literal["message"] = "message"
+    message: str
+
+
+class TextResult(BaseModel):
+    type: Literal["text"] = "text"
+    answer: str
+
+
+class TableResult(BaseModel):
+    type: Literal["table"] = "table"
+    columns: list[str]
+    rows: list[list[Any]]
+    truncated: bool = False
+
+
+Result = Annotated[
+    MessageResult | TextResult | TableResult,
+    Field(discriminator="type")
+]
 
 
 class ChatResponse(BaseModel):
+    intent: Literal["greeting", "off_topic", "unsafe", "data_question"]
     question: str
-    sql: str
-    answer: str
+    sql: str | None = None
+    result: Result
+    timings_ms: StepTimings = StepTimings()

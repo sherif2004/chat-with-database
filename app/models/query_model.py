@@ -1,58 +1,47 @@
+from typing import Any
+
+from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.config import settings
 from app.models.database import engine
 
 
-# ============================================================
-# Validate SQL
-# ============================================================
-
-def validate_sql(sql):
-
-    sql_clean = sql.strip().lower()
-
-    # Must start with SELECT
-    if not sql_clean.startswith("select"):
-        raise ValueError(
-            "Only SELECT queries are allowed."
-        )
-
-    forbidden = [
-        "insert ",
-        "update ",
-        "delete ",
-        "drop ",
-        "alter ",
-        "create ",
-        "truncate ",
-        "grant ",
-        "revoke "
-    ]
-
-    for keyword in forbidden:
-
-        if keyword in sql_clean:
-            raise ValueError(
-                f"Forbidden SQL operation detected: {keyword}"
-            )
-
-    return True
+class QueryResult(BaseModel):
+    columns: list[str]
+    rows: list[list[Any]]
+    truncated: bool = False
 
 
 # ============================================================
-# Execute SQL
+# Execute SQL (read-only)
 # ============================================================
 
-def execute_sql(sql):
+def execute_sql(sql) -> QueryResult:
+    """Run a query in a read-only transaction with a timeout.
 
-    validate_sql(sql)
+    This is the last line of defence: even if a write got past the
+    SQL guard, Postgres rejects it here.
+    """
 
     with engine.connect() as conn:
+
+        conn = conn.execution_options(postgresql_readonly=True)
+
+        conn.execute(
+            text(f"SET LOCAL statement_timeout = {settings.statement_timeout_ms}")
+        )
 
         result = conn.execute(
             text(sql)
         )
 
-        rows = result.mappings().all()
+        columns = list(result.keys())
 
-    return [dict(row) for row in rows]
+        rows = result.fetchmany(settings.max_rows + 1)
+
+    return QueryResult(
+        columns=columns,
+        rows=[list(row) for row in rows[:settings.max_rows]],
+        truncated=len(rows) > settings.max_rows
+    )

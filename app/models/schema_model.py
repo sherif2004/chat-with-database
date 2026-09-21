@@ -1,20 +1,47 @@
+from pydantic import BaseModel, Field
 from sqlalchemy import inspect
 
 from app.models.database import engine
+
+
+class ColumnInfo(BaseModel):
+    name: str
+    type: str
+    nullable: bool
+    default: str | None = None
+
+
+class ForeignKeyInfo(BaseModel):
+    columns: list[str]
+    references_table: str
+    references_columns: list[str]
+
+
+class TableInfo(BaseModel):
+    name: str
+    columns: list[ColumnInfo] = Field(default_factory=list)
+    primary_key: list[str] = Field(default_factory=list)
+    foreign_keys: list[ForeignKeyInfo] = Field(default_factory=list)
+
+
+class DatabaseSchema(BaseModel):
+    database_schema: str
+    tables: list[TableInfo] = Field(default_factory=list)
+
+    @property
+    def table_names(self) -> set[str]:
+        return {table.name for table in self.tables}
 
 
 # ============================================================
 # Dynamic Database Schema
 # ============================================================
 
-def get_database_schema(schema_name="public"):
+def get_database_schema(schema_name="public") -> DatabaseSchema:
 
     inspector = inspect(engine)
 
-    schema = {
-        "database_schema": schema_name,
-        "tables": []
-    }
+    schema = DatabaseSchema(database_schema=schema_name)
 
     tables = inspector.get_table_names(
         schema=schema_name
@@ -22,12 +49,7 @@ def get_database_schema(schema_name="public"):
 
     for table_name in tables:
 
-        table = {
-            "name": table_name,
-            "columns": [],
-            "primary_key": [],
-            "foreign_keys": []
-        }
+        table = TableInfo(name=table_name)
 
         # -------------------------
         # Columns
@@ -40,16 +62,16 @@ def get_database_schema(schema_name="public"):
 
         for column in columns:
 
-            table["columns"].append({
-                "name": column["name"],
-                "type": str(column["type"]),
-                "nullable": column["nullable"],
-                "default": (
+            table.columns.append(ColumnInfo(
+                name=column["name"],
+                type=str(column["type"]),
+                nullable=column["nullable"],
+                default=(
                     str(column["default"])
                     if column["default"] is not None
                     else None
                 )
-            })
+            ))
 
         # -------------------------
         # Primary Key
@@ -60,7 +82,7 @@ def get_database_schema(schema_name="public"):
             schema=schema_name
         )
 
-        table["primary_key"] = pk.get(
+        table.primary_key = pk.get(
             "constrained_columns",
             []
         )
@@ -76,13 +98,13 @@ def get_database_schema(schema_name="public"):
 
         for fk in foreign_keys:
 
-            table["foreign_keys"].append({
-                "columns": fk["constrained_columns"],
-                "references_table": fk["referred_table"],
-                "references_columns": fk["referred_columns"]
-            })
+            table.foreign_keys.append(ForeignKeyInfo(
+                columns=fk["constrained_columns"],
+                references_table=fk["referred_table"],
+                references_columns=fk["referred_columns"]
+            ))
 
-        schema["tables"].append(table)
+        schema.tables.append(table)
 
     return schema
 
@@ -91,49 +113,49 @@ def get_database_schema(schema_name="public"):
 # Convert Schema to LLM-Friendly Text
 # ============================================================
 
-def schema_to_text(schema):
+def schema_to_text(schema: DatabaseSchema):
 
     output = []
 
-    for table in schema["tables"]:
+    for table in schema.tables:
 
         output.append(
-            f"TABLE: {table['name']}"
+            f"TABLE: {table.name}"
         )
 
         output.append("COLUMNS:")
 
-        for column in table["columns"]:
+        for column in table.columns:
 
             nullable = (
                 "NULL"
-                if column["nullable"]
+                if column.nullable
                 else "NOT NULL"
             )
 
             output.append(
-                f"  - {column['name']} "
-                f"{column['type']} {nullable}"
+                f"  - {column.name} "
+                f"{column.type} {nullable}"
             )
 
-        if table["primary_key"]:
+        if table.primary_key:
 
             output.append(
                 "PRIMARY KEY: "
-                + ", ".join(table["primary_key"])
+                + ", ".join(table.primary_key)
             )
 
-        for fk in table["foreign_keys"]:
+        for fk in table.foreign_keys:
 
             for column, ref_column in zip(
-                fk["columns"],
-                fk["references_columns"]
+                fk.columns,
+                fk.references_columns
             ):
 
                 output.append(
                     f"FOREIGN KEY: "
                     f"{column} -> "
-                    f"{fk['references_table']}."
+                    f"{fk.references_table}."
                     f"{ref_column}"
                 )
 

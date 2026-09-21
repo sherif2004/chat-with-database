@@ -1,9 +1,12 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.controllers import chat_controller
 from app.routes import chat_route
+
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager

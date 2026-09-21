@@ -5,3 +5,6 @@ psycopg2-binary
 openai
 python-dotenv
 pandas
+pydantic
+sqlglot
+pydantic-settings
