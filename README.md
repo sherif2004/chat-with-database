@@ -29,6 +29,20 @@ uvicorn app.main:app --reload
 
 `POST /chat` with `{"question": "Which artist has the most albums?"}`
 
+## Frontend (UI + chat history)
+
+```
+cd frontend
+npm install
+npm run dev
+```
+
+Opens a React chat UI at `http://localhost:5173`, talking to the backend at
+`http://localhost:8000`. Each browser gets an anonymous `session_id`
+(stored in `localStorage`) — chat history is persisted server-side, in a
+separate `app.chat_history` table (not `public`, so it never leaks into the
+text-to-SQL schema), and restored on reload.
+
 ## Flow
 
 1. **Input guard** – length limit and prompt-injection patterns.
