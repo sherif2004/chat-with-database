@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.controllers import chat_controller
@@ -12,10 +12,10 @@ router = APIRouter()
 
 
 @router.post("/chat", response_model=ChatResponse, response_model_exclude_none=True)
-def chat(request: ChatRequest):
+def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
     try:
-        return chat_controller.chat_with_database(request)
+        return chat_controller.chat_with_database(request, background_tasks)
 
     except SQLAlchemyError:
         logger.exception("SQL execution error")

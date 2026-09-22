@@ -7,6 +7,7 @@ from pydantic import BaseModel
 Step = Literal[
     "input_guard",
     "router",
+    "retrieve_examples",
     "generate_sql",
     "sql_guard",
     "execute_sql",
@@ -19,6 +20,7 @@ class StepTimings(BaseModel):
 
     input_guard: float | None = None
     router: float | None = None
+    retrieve_examples: float | None = None
     generate_sql: float | None = None
     sql_guard: float | None = None
     execute_sql: float | None = None

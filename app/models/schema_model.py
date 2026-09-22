@@ -8,7 +8,6 @@ class ColumnInfo(BaseModel):
     name: str
     type: str
     nullable: bool
-    default: str | None = None
 
 
 class ForeignKeyInfo(BaseModel):
@@ -25,7 +24,6 @@ class TableInfo(BaseModel):
 
 
 class DatabaseSchema(BaseModel):
-    database_schema: str
     tables: list[TableInfo] = Field(default_factory=list)
 
     @property
@@ -41,7 +39,7 @@ def get_database_schema(schema_name="public") -> DatabaseSchema:
 
     inspector = inspect(engine)
 
-    schema = DatabaseSchema(database_schema=schema_name)
+    schema = DatabaseSchema()
 
     tables = inspector.get_table_names(
         schema=schema_name
@@ -65,12 +63,7 @@ def get_database_schema(schema_name="public") -> DatabaseSchema:
             table.columns.append(ColumnInfo(
                 name=column["name"],
                 type=str(column["type"]),
-                nullable=column["nullable"],
-                default=(
-                    str(column["default"])
-                    if column["default"] is not None
-                    else None
-                )
+                nullable=column["nullable"]
             ))
 
         # -------------------------

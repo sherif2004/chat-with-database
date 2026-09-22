@@ -41,7 +41,7 @@ Return ONLY JSON like {{"intent": "greeting"}}.
 
     try:
         return RouteDecision.model_validate_json(
-            extract_json(ask_llm(prompt))
+            extract_json(ask_llm(prompt, max_output_tokens=64))
         )
 
     except ValidationError:

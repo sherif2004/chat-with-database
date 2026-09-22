@@ -1,4 +1,7 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
+
+from fastapi import BackgroundTasks
 
 from app.guardrails.errors import GuardrailError, UnknownTableError
 from app.guardrails.input_guard import check_question
@@ -9,6 +12,7 @@ from app.models.schema_model import (
     get_database_schema,
     schema_to_text,
 )
+from app.services.example_service import find_similar, remember
 from app.services.llm_service import generate_answer, generate_sql
 from app.services.router_service import classify_intent
 from app.timing import Timings
@@ -32,6 +36,9 @@ CANNOT_ANSWER_MESSAGE = (
 )
 
 logger = logging.getLogger(__name__)
+
+# Runs the router and the example lookup at the same time.
+_executor = ThreadPoolExecutor(max_workers=16)
 
 schema: DatabaseSchema | None = None
 schema_text = None
@@ -73,7 +80,16 @@ def _message(timings, intent, question, message):
 # Chat With Database
 # ============================================================
 
-def chat_with_database(request: ChatRequest) -> ChatResponse:
+def _timed(timings, step, function, *args):
+
+    with timings.step(step):
+        return function(*args)
+
+
+def chat_with_database(
+    request: ChatRequest,
+    background_tasks: BackgroundTasks
+) -> ChatResponse:
 
     timings = Timings()
 
@@ -84,9 +100,15 @@ def chat_with_database(request: ChatRequest) -> ChatResponse:
     except GuardrailError as e:
         return _message(timings, "unsafe", request.question, str(e))
 
-    # Step 1: Route the question
-    with timings.step("router"):
-        intent = classify_intent(question, schema_text).intent
+    # Step 1: Route the question, while looking up similar examples in parallel
+    router_call = _executor.submit(
+        _timed, timings, "router", classify_intent, question, schema_text
+    )
+    examples_call = _executor.submit(
+        _timed, timings, "retrieve_examples", find_similar, question
+    )
+
+    intent = router_call.result().intent
 
     if intent == "greeting":
         return _message(timings, intent, question, GREETING_MESSAGE)
@@ -97,11 +119,15 @@ def chat_with_database(request: ChatRequest) -> ChatResponse:
     if intent == "unsafe":
         return _message(timings, intent, question, UNSAFE_MESSAGE)
 
-    # Step 2: Generate SQL and check it
+    # Step 2: Similar solved examples (dynamic few-shot)
+    examples, question_vector = examples_call.result()
+
+    # Step 3: Generate SQL and check it
     with timings.step("generate_sql"):
         generation = generate_sql(
             question,
-            schema_text
+            schema_text,
+            examples
         )
 
     if not generation.can_answer:
@@ -115,11 +141,16 @@ def chat_with_database(request: ChatRequest) -> ChatResponse:
     except GuardrailError as e:
         return _message(timings, "unsafe", question, f"{UNSAFE_MESSAGE} ({e})")
 
-    # Step 3: Execute SQL (read-only transaction)
+    # Step 4: Execute SQL (read-only transaction)
     with timings.step("execute_sql"):
         query = execute_sql(sql)
 
-    # Step 4: Format the result
+    # Step 5: Learn from the chat (after the response is sent): the pair
+    # passed the guard, ran, and returned rows
+    if query.rows:
+        background_tasks.add_task(remember, question, sql, question_vector)
+
+    # Step 6: Format the result
     if not query.rows:
         result = TextResult(answer=NO_DATA_MESSAGE)
 
