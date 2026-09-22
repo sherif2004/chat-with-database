@@ -55,7 +55,7 @@ def load_schema():
     schema_text = schema_to_text(schema)
 
 
-def _finish(timings, background_tasks, session_id, question, **fields):
+def _finish(timings, background_tasks, session_id, **fields):
 
     response = ChatResponse(timings_ms=timings.as_model(), **fields)
 
@@ -66,7 +66,7 @@ def _finish(timings, background_tasks, session_id, question, **fields):
     )
 
     background_tasks.add_task(
-        save_message, session_id, question, response.model_dump(mode="json")
+        save_message, session_id, fields["question"], response.model_dump(mode="json")
     )
 
     return response
@@ -78,7 +78,6 @@ def _message(timings, background_tasks, session_id, intent, question, message):
         timings,
         background_tasks,
         session_id,
-        question,
         intent=intent,
         question=question,
         result=MessageResult(message=message)
@@ -177,7 +176,6 @@ def chat_with_database(
         timings,
         background_tasks,
         session_id,
-        question,
         intent="data_question",
         question=question,
         sql=sql,
