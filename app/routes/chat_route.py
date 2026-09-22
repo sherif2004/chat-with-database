@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.controllers import chat_controller
-from app.views.chat_view import ChatRequest, ChatResponse
+from app.views.chat_view import ChatRequest, ChatResponse, HistoryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -20,3 +20,9 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     except SQLAlchemyError:
         logger.exception("SQL execution error")
         raise HTTPException(status_code=400, detail="SQL execution error.")
+
+
+@router.get("/chat/history", response_model=list[HistoryEntry])
+def chat_history(session_id: str):
+
+    return chat_controller.get_chat_history(session_id)
