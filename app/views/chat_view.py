@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
@@ -7,6 +8,7 @@ from app.timing import StepTimings
 
 class ChatRequest(BaseModel):
     question: str
+    session_id: str = Field(min_length=1)
     # auto: single values are humanized, lists/rankings come back as a table
     # text: always humanize the result / table: always return a table
     format: Literal["auto", "text", "table"] = "auto"
@@ -27,6 +29,7 @@ class TableResult(BaseModel):
     columns: list[str]
     rows: list[list[Any]]
     truncated: bool = False
+    answer: str | None = None
 
 
 Result = Annotated[
@@ -41,3 +44,9 @@ class ChatResponse(BaseModel):
     sql: str | None = None
     result: Result
     timings_ms: StepTimings = StepTimings()
+
+
+class HistoryEntry(BaseModel):
+    question: str
+    response: ChatResponse
+    created_at: datetime
