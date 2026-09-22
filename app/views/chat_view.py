@@ -9,9 +9,6 @@ from app.timing import StepTimings
 class ChatRequest(BaseModel):
     question: str
     session_id: str = Field(min_length=1)
-    # auto: single values are humanized, lists/rankings come back as a table
-    # text: always humanize the result / table: always return a table
-    format: Literal["auto", "text", "table"] = "auto"
 
 
 class MessageResult(BaseModel):

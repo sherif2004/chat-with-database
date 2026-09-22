@@ -25,4 +25,9 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 @router.get("/chat/history", response_model=list[HistoryEntry])
 def chat_history(session_id: str):
 
-    return chat_controller.get_chat_history(session_id)
+    try:
+        return chat_controller.get_chat_history(session_id)
+
+    except SQLAlchemyError:
+        logger.exception("Chat history read error")
+        raise HTTPException(status_code=400, detail="Chat history read error.")

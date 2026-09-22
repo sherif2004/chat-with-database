@@ -27,7 +27,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-`POST /chat` with `{"question": "Which artist has the most albums?"}`
+`POST /chat` with `{"question": "Which artist has the most albums?", "session_id": "<any client-generated id>"}`
 
 ## Frontend (UI + chat history)
 
@@ -50,9 +50,9 @@ text-to-SQL schema), and restored on reload.
 3. **Dynamic few-shot** – the question is embedded, and stored question→SQL pairs that are similar enough (found in Qdrant) are added to the SQL prompt.
 4. **SQL guard** – parses the generated SQL (sqlglot): one `SELECT` only, known tables only, no `pg_*`/`dblink`/`set_config`-style functions.
 5. **Read-only execution** – runs in a read-only transaction with a statement timeout and a row cap, so writes fail even if a query slipped through.
-6. **Learn + format** – a query that passed the guard and returned rows is saved as an example after the response is sent, so the store grows from real usage without slowing the answer. The request's `format` then decides the shape: `auto` (a single row is humanized, lists and rankings with several rows return a table), `text` or `table`.
+6. **Learn + format** – a query that passed the guard and returned rows is saved as an example after the response is sent, so the store grows from real usage without slowing the answer. A query with no rows returns a `message`/`text` result saying so; a query with rows always returns a `table` result carrying both the raw `columns`/`rows` and an LLM-generated `answer` string together.
 
-Response `result` is one of `{"type": "message"}`, `{"type": "text"}` or `{"type": "table", "columns": [...], "rows": [...]}`.
+Response `result` is one of `{"type": "message"}`, `{"type": "text"}` or `{"type": "table", "columns": [...], "rows": [...], "answer": "..."}`.
 
 Limits are set with `MAX_QUESTION_LENGTH`, `MAX_ROWS` and `STATEMENT_TIMEOUT_MS`.
 

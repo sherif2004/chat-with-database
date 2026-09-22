@@ -2,6 +2,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import BackgroundTasks
+from pydantic import ValidationError
 
 from app.guardrails.errors import GuardrailError, UnknownTableError
 from app.guardrails.input_guard import check_question
@@ -187,11 +188,16 @@ def get_chat_history(session_id: str) -> list[HistoryEntry]:
 
     rows = get_history(session_id)
 
-    return [
-        HistoryEntry(
-            question=row.question,
-            response=ChatResponse.model_validate(row.response),
-            created_at=row.created_at
-        )
-        for row in rows
-    ]
+    entries = []
+
+    for row in rows:
+        try:
+            entries.append(HistoryEntry(
+                question=row.question,
+                response=ChatResponse.model_validate(row.response),
+                created_at=row.created_at
+            ))
+        except ValidationError:
+            logger.warning("Skipping unparseable chat_history row for session %s", session_id)
+
+    return entries
