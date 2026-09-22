@@ -6,6 +6,7 @@ from fastapi import BackgroundTasks
 from app.guardrails.errors import GuardrailError, UnknownTableError
 from app.guardrails.input_guard import check_question
 from app.guardrails.sql_guard import validate_sql
+from app.models.history_model import get_history, save_message
 from app.models.query_model import execute_sql
 from app.models.schema_model import (
     DatabaseSchema,
@@ -19,6 +20,7 @@ from app.timing import Timings
 from app.views.chat_view import (
     ChatRequest,
     ChatResponse,
+    HistoryEntry,
     MessageResult,
     TableResult,
     TextResult,
@@ -53,7 +55,7 @@ def load_schema():
     schema_text = schema_to_text(schema)
 
 
-def _finish(timings, **fields):
+def _finish(timings, background_tasks, session_id, question, **fields):
 
     response = ChatResponse(timings_ms=timings.as_model(), **fields)
 
@@ -63,13 +65,20 @@ def _finish(timings, **fields):
         response.timings_ms
     )
 
+    background_tasks.add_task(
+        save_message, session_id, question, response.model_dump(mode="json")
+    )
+
     return response
 
 
-def _message(timings, intent, question, message):
+def _message(timings, background_tasks, session_id, intent, question, message):
 
     return _finish(
         timings,
+        background_tasks,
+        session_id,
+        question,
         intent=intent,
         question=question,
         result=MessageResult(message=message)
@@ -92,13 +101,14 @@ def chat_with_database(
 ) -> ChatResponse:
 
     timings = Timings()
+    session_id = request.session_id
 
     # Step 0: Input guardrail
     try:
         with timings.step("input_guard"):
             question = check_question(request.question)
     except GuardrailError as e:
-        return _message(timings, "unsafe", request.question, str(e))
+        return _message(timings, background_tasks, session_id, "unsafe", request.question, str(e))
 
     # Step 1: Route the question, while looking up similar examples in parallel
     router_call = _executor.submit(
@@ -111,13 +121,13 @@ def chat_with_database(
     intent = router_call.result().intent
 
     if intent == "greeting":
-        return _message(timings, intent, question, GREETING_MESSAGE)
+        return _message(timings, background_tasks, session_id, intent, question, GREETING_MESSAGE)
 
     if intent == "off_topic":
-        return _message(timings, intent, question, OFF_TOPIC_MESSAGE)
+        return _message(timings, background_tasks, session_id, intent, question, OFF_TOPIC_MESSAGE)
 
     if intent == "unsafe":
-        return _message(timings, intent, question, UNSAFE_MESSAGE)
+        return _message(timings, background_tasks, session_id, intent, question, UNSAFE_MESSAGE)
 
     # Step 2: Similar solved examples (dynamic few-shot)
     examples, question_vector = examples_call.result()
@@ -131,15 +141,15 @@ def chat_with_database(
         )
 
     if not generation.can_answer:
-        return _message(timings, "off_topic", question, CANNOT_ANSWER_MESSAGE)
+        return _message(timings, background_tasks, session_id, "off_topic", question, CANNOT_ANSWER_MESSAGE)
 
     try:
         with timings.step("sql_guard"):
             sql = validate_sql(generation.sql, schema.table_names)
     except UnknownTableError:
-        return _message(timings, "off_topic", question, CANNOT_ANSWER_MESSAGE)
+        return _message(timings, background_tasks, session_id, "off_topic", question, CANNOT_ANSWER_MESSAGE)
     except GuardrailError as e:
-        return _message(timings, "unsafe", question, f"{UNSAFE_MESSAGE} ({e})")
+        return _message(timings, background_tasks, session_id, "unsafe", question, f"{UNSAFE_MESSAGE} ({e})")
 
     # Step 4: Execute SQL (read-only transaction)
     with timings.step("execute_sql"):
@@ -150,14 +160,10 @@ def chat_with_database(
     if query.rows:
         background_tasks.add_task(remember, question, sql, question_vector)
 
-    # Step 6: Format the result
+    # Step 6: Format the result — return both the raw table and an
+    # LLM-generated natural-language answer together
     if not query.rows:
         result = TextResult(answer=NO_DATA_MESSAGE)
-
-    elif request.format == "table" or (
-        request.format == "auto" and len(query.rows) > 1
-    ):
-        result = TableResult(**query.model_dump())
 
     else:
         records = [dict(zip(query.columns, row)) for row in query.rows]
@@ -165,12 +171,29 @@ def chat_with_database(
         with timings.step("generate_answer"):
             answer = generate_answer(question, sql, records)
 
-        result = TextResult(answer=answer)
+        result = TableResult(**query.model_dump(), answer=answer)
 
     return _finish(
         timings,
+        background_tasks,
+        session_id,
+        question,
         intent="data_question",
         question=question,
         sql=sql,
         result=result
     )
+
+
+def get_chat_history(session_id: str) -> list[HistoryEntry]:
+
+    rows = get_history(session_id)
+
+    return [
+        HistoryEntry(
+            question=row.question,
+            response=ChatResponse.model_validate(row.response),
+            created_at=row.created_at
+        )
+        for row in rows
+    ]
