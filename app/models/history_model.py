@@ -92,3 +92,34 @@ def get_history(session_id: str) -> list[HistoryRow]:
             ]
 
     return retry_on_disconnect(run)
+
+
+def get_recent_history(session_id: str, limit: int) -> list[HistoryRow]:
+    """Last `limit` exchanges, oldest first. Unlike get_history(), this
+    fetches only `limit` rows from the database instead of the whole
+    session — used to feed a prompt, where the cost must not grow with
+    how long the conversation has been going."""
+
+    def run():
+        with app_engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT question, response, created_at
+                    FROM app.chat_history
+                    WHERE session_id = :session_id
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                """),
+                {"session_id": session_id, "limit": limit}
+            )
+            rows = [
+                HistoryRow(
+                    question=row.question,
+                    response=row.response,
+                    created_at=row.created_at
+                )
+                for row in result
+            ]
+            return list(reversed(rows))
+
+    return retry_on_disconnect(run)

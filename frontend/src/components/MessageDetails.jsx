@@ -1,6 +1,7 @@
 const STEP_LABELS = {
   input_guard: "Input guard",
   resolve_connection: "Resolve connection",
+  load_history: "Load history",
   router: "Router",
   retrieve_examples: "Retrieve examples",
   generate_sql: "Generate SQL",

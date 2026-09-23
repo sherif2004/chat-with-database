@@ -7,7 +7,7 @@ from app.guardrails.errors import GuardrailError, UnknownTableError
 from app.guardrails.input_guard import check_question
 from app.guardrails.sql_guard import validate_sql
 from app.models.connection_model import DatabaseConnectionError, SessionConnection, get_or_default
-from app.models.history_model import get_history, save_message
+from app.models.history_model import get_history, get_recent_history, save_message
 from app.models.query_model import execute_sql
 from app.models.workflow_model import get_workflow
 from app.services.example_service import find_similar, remember
@@ -78,6 +78,34 @@ def _record_usage(debug, step, usage):
         debug.token_usage[step] = usage
 
 
+RECENT_HISTORY_LIMIT = 3
+
+
+def _recent_history(session_id: str, limit: int = RECENT_HISTORY_LIMIT) -> list[dict]:
+    """Last few exchanges, oldest first, as {"question", "answer", "sql"}.
+
+    `sql` (when the turn was a data question) is what actually lets a
+    follow-up like "just for Iron Maiden" work: the model needs the prior
+    query's joins and aggregations to adapt, not just the text summary of
+    its result — the same reason few-shot examples carry SQL, not prose.
+    """
+
+    rows = get_recent_history(session_id, limit)
+
+    turns = []
+
+    for row in rows:
+        result = row.response.get("result") or {}
+        answer = result.get("answer") or result.get("message") or ""
+        turns.append({
+            "question": row.question,
+            "answer": answer,
+            "sql": row.response.get("sql"),
+        })
+
+    return turns
+
+
 # ============================================================
 # Chat With Database
 # ============================================================
@@ -140,11 +168,11 @@ def _answer_data_question(
     )
 
 
-def _chat_with_router(question, connection, timings, background_tasks, session_id, debug):
+def _chat_with_router(question, connection, timings, background_tasks, session_id, debug, history):
 
     # Step 1: Route the question
     with timings.step("router"):
-        decision, router_prompt, router_usage = classify_intent(question, connection.schema_text)
+        decision, router_prompt, router_usage = classify_intent(question, connection.schema_text, history)
     intent = decision.intent
     debug.prompts["router"] = router_prompt
     _record_usage(debug, "router", router_usage)
@@ -172,7 +200,8 @@ def _chat_with_router(question, connection, timings, background_tasks, session_i
         generation = generate_sql(
             question,
             connection.schema_text,
-            examples
+            examples,
+            history
         )
     debug.prompts["generate_sql"] = generation.prompt
     _record_usage(debug, "generate_sql", generation.usage)
@@ -187,7 +216,7 @@ def _chat_with_router(question, connection, timings, background_tasks, session_i
     )
 
 
-def _chat_without_router(question, connection, timings, background_tasks, session_id, debug):
+def _chat_without_router(question, connection, timings, background_tasks, session_id, debug, history):
 
     # Same few-shot examples as the router workflow, fetched unconditionally
     # here since this workflow doesn't know the intent until after the
@@ -202,7 +231,7 @@ def _chat_without_router(question, connection, timings, background_tasks, sessio
 
     # One call does both the routing and (if applicable) the SQL generation.
     with timings.step("route_and_generate_sql"):
-        generation = generate_route_and_sql(question, connection.schema_text, examples)
+        generation = generate_route_and_sql(question, connection.schema_text, examples, history)
     debug.prompts["route_and_generate_sql"] = generation.prompt
     _record_usage(debug, "route_and_generate_sql", generation.usage)
 
@@ -253,10 +282,13 @@ def chat_with_database(
     workflow = get_workflow(session_id)
     debug.workflow = workflow
 
-    if workflow == "no_router":
-        return _chat_without_router(question, connection, timings, background_tasks, session_id, debug)
+    with timings.step("load_history"):
+        history = _recent_history(session_id)
 
-    return _chat_with_router(question, connection, timings, background_tasks, session_id, debug)
+    if workflow == "no_router":
+        return _chat_without_router(question, connection, timings, background_tasks, session_id, debug, history)
+
+    return _chat_with_router(question, connection, timings, background_tasks, session_id, debug, history)
 
 
 def get_chat_history(session_id: str) -> list[HistoryEntry]:
