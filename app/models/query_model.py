@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.config import settings
-from app.models.database import engine, retry_on_disconnect
+from app.models.database import retry_on_disconnect
 
 
 class QueryResult(BaseModel):
@@ -17,7 +17,7 @@ class QueryResult(BaseModel):
 # Execute SQL (read-only)
 # ============================================================
 
-def execute_sql(sql) -> QueryResult:
+def execute_sql(sql, engine) -> QueryResult:
     """Run a query in a read-only transaction with a timeout.
 
     This is the last line of defence: even if a write got past the

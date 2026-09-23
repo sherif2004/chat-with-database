@@ -1,5 +1,4 @@
 import logging
-from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
@@ -7,20 +6,19 @@ from pydantic import ValidationError
 from app.guardrails.errors import GuardrailError, UnknownTableError
 from app.guardrails.input_guard import check_question
 from app.guardrails.sql_guard import validate_sql
+from app.models.connection_model import DatabaseConnectionError, SessionConnection, get_or_default
 from app.models.history_model import get_history, save_message
 from app.models.query_model import execute_sql
-from app.models.schema_model import (
-    DatabaseSchema,
-    get_database_schema,
-    schema_to_text,
-)
+from app.models.workflow_model import get_workflow
 from app.services.example_service import find_similar, remember
-from app.services.llm_service import generate_answer, generate_sql
+from app.services.llm_service import MODEL, generate_answer, generate_route_and_sql, generate_sql
 from app.services.router_service import classify_intent
 from app.timing import Timings
 from app.views.chat_view import (
     ChatRequest,
     ChatResponse,
+    DebugInfo,
+    ExampleUsed,
     HistoryEntry,
     MessageResult,
     TableResult,
@@ -32,33 +30,22 @@ GREETING_MESSAGE = (
 )
 OFF_TOPIC_MESSAGE = "Your question is not related to the data."
 UNSAFE_MESSAGE = "I can only answer read-only questions about the data."
-NO_DATA_MESSAGE = "No matching data was found."
 CANNOT_ANSWER_MESSAGE = (
     "I couldn't answer that: the data doesn't contain the information "
     "needed for this question."
 )
 
+
+def _connection_unreachable_message(error: DatabaseConnectionError) -> str:
+    return f"Your connected database is unreachable: {error}"
+
+
 logger = logging.getLogger(__name__)
 
-# Runs the router and the example lookup at the same time.
-_executor = ThreadPoolExecutor(max_workers=16)
 
-schema: DatabaseSchema | None = None
-schema_text = None
+def _finish(timings, background_tasks, session_id, debug, **fields):
 
-
-def load_schema():
-
-    global schema, schema_text
-
-    schema = get_database_schema()
-
-    schema_text = schema_to_text(schema)
-
-
-def _finish(timings, background_tasks, session_id, **fields):
-
-    response = ChatResponse(timings_ms=timings.as_model(), **fields)
+    response = ChatResponse(timings_ms=timings.as_model(), debug=debug, **fields)
 
     logger.info(
         "intent=%s timings_ms=%s",
@@ -73,26 +60,168 @@ def _finish(timings, background_tasks, session_id, **fields):
     return response
 
 
-def _message(timings, background_tasks, session_id, intent, question, message):
+def _message(timings, background_tasks, session_id, intent, question, message, debug):
 
     return _finish(
         timings,
         background_tasks,
         session_id,
+        debug,
         intent=intent,
         question=question,
         result=MessageResult(message=message)
     )
 
 
+def _record_usage(debug, step, usage):
+    if usage is not None:
+        debug.token_usage[step] = usage
+
+
 # ============================================================
 # Chat With Database
 # ============================================================
 
-def _timed(timings, step, function, *args):
+def _answer_data_question(
+    sql,
+    question,
+    connection: SessionConnection,
+    timings,
+    background_tasks,
+    session_id,
+    debug,
+    question_vector=None,
+):
+    """Shared tail for both workflows once SQL has been generated: guard
+    it, run it, learn from it, and turn the result into a reply."""
 
-    with timings.step(step):
-        return function(*args)
+    try:
+        with timings.step("sql_guard"):
+            sql = validate_sql(sql, connection.schema.table_names)
+    except UnknownTableError:
+        return _message(timings, background_tasks, session_id, "off_topic", question, CANNOT_ANSWER_MESSAGE, debug)
+    except GuardrailError as e:
+        return _message(timings, background_tasks, session_id, "unsafe", question, f"{UNSAFE_MESSAGE} ({e})", debug)
+
+    # Execute SQL (read-only transaction)
+    with timings.step("execute_sql"):
+        query = execute_sql(sql, connection.engine)
+
+    # Learn from the chat (after the response is sent): the pair passed
+    # the guard, ran, and returned rows
+    if query.rows:
+        background_tasks.add_task(remember, question, sql, question_vector)
+
+    # Format the result — return both the raw table and an LLM-generated
+    # natural-language answer together. The LLM is asked even when there
+    # are no rows, so the "no data" reply is still in the question's own
+    # language instead of a fixed English string.
+    records = [dict(zip(query.columns, row)) for row in query.rows]
+
+    with timings.step("generate_answer"):
+        answer, answer_prompt, answer_usage = generate_answer(question, sql, records)
+    debug.prompts["generate_answer"] = answer_prompt
+    _record_usage(debug, "generate_answer", answer_usage)
+
+    if not query.rows:
+        result = TextResult(answer=answer)
+    else:
+        result = TableResult(**query.model_dump(), answer=answer)
+
+    return _finish(
+        timings,
+        background_tasks,
+        session_id,
+        debug,
+        intent="data_question",
+        question=question,
+        sql=sql,
+        result=result
+    )
+
+
+def _chat_with_router(question, connection, timings, background_tasks, session_id, debug):
+
+    # Step 1: Route the question
+    with timings.step("router"):
+        decision, router_prompt, router_usage = classify_intent(question, connection.schema_text)
+    intent = decision.intent
+    debug.prompts["router"] = router_prompt
+    _record_usage(debug, "router", router_usage)
+
+    if intent == "greeting":
+        return _message(timings, background_tasks, session_id, intent, question, decision.reply or GREETING_MESSAGE, debug)
+
+    if intent == "off_topic":
+        return _message(timings, background_tasks, session_id, intent, question, decision.reply or OFF_TOPIC_MESSAGE, debug)
+
+    if intent == "unsafe":
+        return _message(timings, background_tasks, session_id, intent, question, decision.reply or UNSAFE_MESSAGE, debug)
+
+    # Step 2: Similar solved examples (dynamic few-shot) — only worth the
+    # embedding + Qdrant lookup once we know this is a data question.
+    with timings.step("retrieve_examples"):
+        examples, question_vector = find_similar(question)
+    debug.examples = [
+        ExampleUsed(question=e.example.question, sql=e.example.sql, score=e.score)
+        for e in examples
+    ]
+
+    # Step 3: Generate SQL and check it
+    with timings.step("generate_sql"):
+        generation = generate_sql(
+            question,
+            connection.schema_text,
+            examples
+        )
+    debug.prompts["generate_sql"] = generation.prompt
+    _record_usage(debug, "generate_sql", generation.usage)
+
+    if not generation.can_answer:
+        message = generation.cannot_answer_message or CANNOT_ANSWER_MESSAGE
+        return _message(timings, background_tasks, session_id, "off_topic", question, message, debug)
+
+    return _answer_data_question(
+        generation.sql, question, connection, timings, background_tasks, session_id, debug,
+        question_vector=question_vector
+    )
+
+
+def _chat_without_router(question, connection, timings, background_tasks, session_id, debug):
+
+    # Same few-shot examples as the router workflow, fetched unconditionally
+    # here since this workflow doesn't know the intent until after the
+    # merged call below — that's the one cost this workflow still pays
+    # even though it skips the separate router call.
+    with timings.step("retrieve_examples"):
+        examples, question_vector = find_similar(question)
+    debug.examples = [
+        ExampleUsed(question=e.example.question, sql=e.example.sql, score=e.score)
+        for e in examples
+    ]
+
+    # One call does both the routing and (if applicable) the SQL generation.
+    with timings.step("route_and_generate_sql"):
+        generation = generate_route_and_sql(question, connection.schema_text, examples)
+    debug.prompts["route_and_generate_sql"] = generation.prompt
+    _record_usage(debug, "route_and_generate_sql", generation.usage)
+
+    if generation.intent == "greeting":
+        return _message(timings, background_tasks, session_id, "greeting", question, generation.reply or GREETING_MESSAGE, debug)
+
+    if generation.intent == "off_topic":
+        return _message(timings, background_tasks, session_id, "off_topic", question, generation.reply or OFF_TOPIC_MESSAGE, debug)
+
+    if generation.intent == "unsafe":
+        return _message(timings, background_tasks, session_id, "unsafe", question, generation.reply or UNSAFE_MESSAGE, debug)
+
+    if generation.intent == "cannot_answer":
+        return _message(timings, background_tasks, session_id, "off_topic", question, generation.reply or CANNOT_ANSWER_MESSAGE, debug)
+
+    return _answer_data_question(
+        generation.sql, question, connection, timings, background_tasks, session_id, debug,
+        question_vector=question_vector
+    )
 
 
 def chat_with_database(
@@ -102,86 +231,32 @@ def chat_with_database(
 
     timings = Timings()
     session_id = request.session_id
+    debug = DebugInfo(model=MODEL)
 
     # Step 0: Input guardrail
     try:
         with timings.step("input_guard"):
             question = check_question(request.question)
     except GuardrailError as e:
-        return _message(timings, background_tasks, session_id, "unsafe", request.question, str(e))
+        return _message(timings, background_tasks, session_id, "unsafe", request.question, str(e), debug)
 
-    # Step 1: Route the question, while looking up similar examples in parallel
-    router_call = _executor.submit(
-        _timed, timings, "router", classify_intent, question, schema_text
-    )
-    examples_call = _executor.submit(
-        _timed, timings, "retrieve_examples", find_similar, question
-    )
-
-    intent = router_call.result().intent
-
-    if intent == "greeting":
-        return _message(timings, background_tasks, session_id, intent, question, GREETING_MESSAGE)
-
-    if intent == "off_topic":
-        return _message(timings, background_tasks, session_id, intent, question, OFF_TOPIC_MESSAGE)
-
-    if intent == "unsafe":
-        return _message(timings, background_tasks, session_id, intent, question, UNSAFE_MESSAGE)
-
-    # Step 2: Similar solved examples (dynamic few-shot)
-    examples, question_vector = examples_call.result()
-
-    # Step 3: Generate SQL and check it
-    with timings.step("generate_sql"):
-        generation = generate_sql(
-            question,
-            schema_text,
-            examples
+    # Resolve which database this session is talking to
+    try:
+        with timings.step("resolve_connection"):
+            connection = get_or_default(session_id)
+    except DatabaseConnectionError as e:
+        return _message(
+            timings, background_tasks, session_id, "connection_error",
+            question, _connection_unreachable_message(e), debug
         )
 
-    if not generation.can_answer:
-        return _message(timings, background_tasks, session_id, "off_topic", question, CANNOT_ANSWER_MESSAGE)
+    workflow = get_workflow(session_id)
+    debug.workflow = workflow
 
-    try:
-        with timings.step("sql_guard"):
-            sql = validate_sql(generation.sql, schema.table_names)
-    except UnknownTableError:
-        return _message(timings, background_tasks, session_id, "off_topic", question, CANNOT_ANSWER_MESSAGE)
-    except GuardrailError as e:
-        return _message(timings, background_tasks, session_id, "unsafe", question, f"{UNSAFE_MESSAGE} ({e})")
+    if workflow == "no_router":
+        return _chat_without_router(question, connection, timings, background_tasks, session_id, debug)
 
-    # Step 4: Execute SQL (read-only transaction)
-    with timings.step("execute_sql"):
-        query = execute_sql(sql)
-
-    # Step 5: Learn from the chat (after the response is sent): the pair
-    # passed the guard, ran, and returned rows
-    if query.rows:
-        background_tasks.add_task(remember, question, sql, question_vector)
-
-    # Step 6: Format the result — return both the raw table and an
-    # LLM-generated natural-language answer together
-    if not query.rows:
-        result = TextResult(answer=NO_DATA_MESSAGE)
-
-    else:
-        records = [dict(zip(query.columns, row)) for row in query.rows]
-
-        with timings.step("generate_answer"):
-            answer = generate_answer(question, sql, records)
-
-        result = TableResult(**query.model_dump(), answer=answer)
-
-    return _finish(
-        timings,
-        background_tasks,
-        session_id,
-        intent="data_question",
-        question=question,
-        sql=sql,
-        result=result
-    )
+    return _chat_with_router(question, connection, timings, background_tasks, session_id, debug)
 
 
 def get_chat_history(session_id: str) -> list[HistoryEntry]:

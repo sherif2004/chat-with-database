@@ -1,8 +1,6 @@
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect
 
-from app.models.database import engine
-
 
 class ColumnInfo(BaseModel):
     name: str
@@ -35,7 +33,7 @@ class DatabaseSchema(BaseModel):
 # Dynamic Database Schema
 # ============================================================
 
-def get_database_schema(schema_name="public") -> DatabaseSchema:
+def get_database_schema(engine, schema_name="public") -> DatabaseSchema:
 
     inspector = inspect(engine)
 

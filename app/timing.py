@@ -2,13 +2,15 @@ import time
 from contextlib import contextmanager
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 Step = Literal[
     "input_guard",
+    "resolve_connection",
     "router",
     "retrieve_examples",
     "generate_sql",
+    "route_and_generate_sql",
     "sql_guard",
     "execute_sql",
     "generate_answer",
@@ -16,12 +18,22 @@ Step = Literal[
 
 
 class StepTimings(BaseModel):
-    """Milliseconds spent in each step; steps that did not run are None."""
+    """Milliseconds spent in each step; steps that did not run are None.
+
+    extra="forbid": a step name missing from this model (e.g. a new
+    timings.step("...") added to Step above but not mirrored here) must
+    fail loudly here instead of silently vanishing from the response —
+    this has already happened twice with steps quietly dropped.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     input_guard: float | None = None
+    resolve_connection: float | None = None
     router: float | None = None
     retrieve_examples: float | None = None
     generate_sql: float | None = None
+    route_and_generate_sql: float | None = None
     sql_guard: float | None = None
     execute_sql: float | None = None
     generate_answer: float | None = None

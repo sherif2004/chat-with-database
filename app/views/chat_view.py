@@ -35,12 +35,33 @@ Result = Annotated[
 ]
 
 
+class ExampleUsed(BaseModel):
+    question: str
+    sql: str
+    score: float
+
+
+class TokenUsage(BaseModel):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
+class DebugInfo(BaseModel):
+    model: str
+    workflow: Literal["router", "no_router"] = "router"
+    prompts: dict[str, str] = Field(default_factory=dict)
+    token_usage: dict[str, TokenUsage] = Field(default_factory=dict)
+    examples: list[ExampleUsed] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
-    intent: Literal["greeting", "off_topic", "unsafe", "data_question"]
+    intent: Literal["greeting", "off_topic", "unsafe", "data_question", "connection_error"]
     question: str
     sql: str | None = None
     result: Result
     timings_ms: StepTimings = StepTimings()
+    debug: DebugInfo | None = None
 
 
 class HistoryEntry(BaseModel):

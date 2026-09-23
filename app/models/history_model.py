@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
 
-from app.models.database import engine, retry_on_disconnect
+from app.models.database import app_engine, retry_on_disconnect
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def ensure_chat_history_schema() -> None:
     """
 
     def run():
-        with engine.begin() as conn:
+        with app_engine.begin() as conn:
             conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS app.chat_history (
@@ -50,7 +50,7 @@ def save_message(session_id: str, question: str, response: dict) -> None:
     this runs as a background task."""
 
     def run():
-        with engine.begin() as conn:
+        with app_engine.begin() as conn:
             conn.execute(
                 text("""
                     INSERT INTO app.chat_history (session_id, question, response)
@@ -72,7 +72,7 @@ def save_message(session_id: str, question: str, response: dict) -> None:
 def get_history(session_id: str) -> list[HistoryRow]:
 
     def run():
-        with engine.connect() as conn:
+        with app_engine.connect() as conn:
             result = conn.execute(
                 text("""
                     SELECT question, response, created_at
