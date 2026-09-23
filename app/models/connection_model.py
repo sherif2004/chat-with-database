@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.models.database import app_engine, retry_on_disconnect
+from app.models.database import app_engine, retry_on_disconnect, run_ddl
 from app.models.schema_model import DatabaseSchema, get_database_schema, schema_to_text
 
 logger = logging.getLogger(__name__)
@@ -83,23 +83,36 @@ def _test_and_introspect(engine: Engine) -> DatabaseSchema:
         raise DatabaseConnectionError(f"Could not connect to that database: {e.orig or e}")
 
 
+def _connect_and_introspect(database_url: str) -> tuple[Engine, DatabaseSchema]:
+    engine = _build_engine(database_url)
+    return engine, _test_and_introspect(engine)
+
+
+def _make_connection(engine: Engine, schema: DatabaseSchema, label: str) -> SessionConnection:
+    return SessionConnection(
+        engine=engine,
+        schema=schema,
+        schema_text=schema_to_text(schema),
+        label=label,
+        is_default=False,
+    )
+
+
 def ensure_connections_schema() -> None:
     """Create the app.connections table if it doesn't exist yet."""
 
-    def run():
-        with app_engine.begin() as conn:
-            conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS app.connections (
-                    session_id TEXT PRIMARY KEY,
-                    database_url TEXT NOT NULL,
-                    label TEXT NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )
-            """))
-
-    retry_on_disconnect(run)
+    run_ddl(
+        "CREATE SCHEMA IF NOT EXISTS app",
+        """
+        CREATE TABLE IF NOT EXISTS app.connections (
+            session_id TEXT PRIMARY KEY,
+            database_url TEXT NOT NULL,
+            label TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """,
+    )
 
 
 def init_default_connection() -> None:
@@ -165,23 +178,14 @@ def _load_saved_url(session_id: str) -> str | None:
 def connect(session_id: str, database_url: str, label: str | None = None) -> SessionConnection:
     """Connect a session to a new database, replacing any existing one."""
 
-    engine = _build_engine(database_url)
-    schema = _test_and_introspect(engine)
-
+    engine, schema = _connect_and_introspect(database_url)
     resolved_label = label or _label_for(database_url)
 
     old = _cache.get(session_id)
     if old is not None:
         old.engine.dispose()
 
-    connection = SessionConnection(
-        engine=engine,
-        schema=schema,
-        schema_text=schema_to_text(schema),
-        label=resolved_label,
-        is_default=False,
-    )
-
+    connection = _make_connection(engine, schema, resolved_label)
     _cache[session_id] = connection
     _save_connection_row(session_id, database_url, resolved_label)
 
@@ -208,16 +212,8 @@ def get_or_default(session_id: str) -> SessionConnection:
         _no_saved_connection.add(session_id)
         return get_default_connection()
 
-    engine = _build_engine(saved_url)
-    schema = _test_and_introspect(engine)
-
-    connection = SessionConnection(
-        engine=engine,
-        schema=schema,
-        schema_text=schema_to_text(schema),
-        label=_label_for(saved_url),
-        is_default=False,
-    )
+    engine, schema = _connect_and_introspect(saved_url)
+    connection = _make_connection(engine, schema, _label_for(saved_url))
 
     _cache[session_id] = connection
     return connection

@@ -4,7 +4,7 @@ from typing import Literal
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.models.database import app_engine, retry_on_disconnect
+from app.models.database import app_engine, retry_on_disconnect, run_ddl
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +20,16 @@ _cache: dict[str, Workflow] = {}
 def ensure_workflow_schema() -> None:
     """Create the app.session_settings table if it doesn't exist yet."""
 
-    def run():
-        with app_engine.begin() as conn:
-            conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS app.session_settings (
-                    session_id TEXT PRIMARY KEY,
-                    workflow TEXT NOT NULL DEFAULT 'router',
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )
-            """))
-
-    retry_on_disconnect(run)
+    run_ddl(
+        "CREATE SCHEMA IF NOT EXISTS app",
+        """
+        CREATE TABLE IF NOT EXISTS app.session_settings (
+            session_id TEXT PRIMARY KEY,
+            workflow TEXT NOT NULL DEFAULT 'router',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """,
+    )
 
 
 def set_workflow(session_id: str, workflow: Workflow) -> None:

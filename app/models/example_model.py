@@ -36,11 +36,8 @@ def _point_id(question_key: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, question_key))
 
 
-# ============================================================
-# Example store: question -> verified SQL pairs in Qdrant
-# ============================================================
-
 class QdrantExampleStore:
+    """Question -> verified SQL pairs, stored in Qdrant."""
 
     def __init__(self, client: QdrantClient, collection: str):
 
@@ -48,10 +45,6 @@ class QdrantExampleStore:
         self.collection = collection
 
         self.ready = False
-
-    # -------------------------
-    # Setup
-    # -------------------------
 
     def setup(self, dimensions: int) -> None:
         """Create the collection if missing.
@@ -82,10 +75,6 @@ class QdrantExampleStore:
             )
 
         self.ready = True
-
-    # -------------------------
-    # Search / add
-    # -------------------------
 
     def search(self, vector, min_score: float) -> list[SimilarExample]:
         """Every stored example at least `min_score` similar, best first."""

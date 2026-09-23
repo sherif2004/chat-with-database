@@ -16,12 +16,10 @@ class Settings(BaseSettings):
 
     database_url: str
 
-    # Guardrails / limits
     max_question_length: int = 500
     max_rows: int = 100
     statement_timeout_ms: int = 10000
 
-    # Dynamic few-shot examples (stored in Qdrant)
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
     qdrant_collection: str = "chat_examples"

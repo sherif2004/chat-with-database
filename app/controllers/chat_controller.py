@@ -106,10 +106,6 @@ def _recent_history(session_id: str, limit: int = RECENT_HISTORY_LIMIT) -> list[
     return turns
 
 
-# ============================================================
-# Chat With Database
-# ============================================================
-
 def _answer_data_question(
     sql,
     question,
@@ -131,7 +127,6 @@ def _answer_data_question(
     except GuardrailError as e:
         return _message(timings, background_tasks, session_id, "unsafe", question, f"{UNSAFE_MESSAGE} ({e})", debug)
 
-    # Execute SQL (read-only transaction)
     with timings.step("execute_sql"):
         query = execute_sql(sql, connection.engine)
 
@@ -170,7 +165,6 @@ def _answer_data_question(
 
 def _chat_with_router(question, connection, timings, background_tasks, session_id, debug, history):
 
-    # Step 1: Route the question
     with timings.step("router"):
         decision, router_prompt, router_usage = classify_intent(question, connection.schema_text, history)
     intent = decision.intent
@@ -186,8 +180,8 @@ def _chat_with_router(question, connection, timings, background_tasks, session_i
     if intent == "unsafe":
         return _message(timings, background_tasks, session_id, intent, question, decision.reply or UNSAFE_MESSAGE, debug)
 
-    # Step 2: Similar solved examples (dynamic few-shot) — only worth the
-    # embedding + Qdrant lookup once we know this is a data question.
+    # Only worth the embedding + Qdrant lookup once we know this is a
+    # data question.
     with timings.step("retrieve_examples"):
         examples, question_vector = find_similar(question)
     debug.examples = [
@@ -195,7 +189,6 @@ def _chat_with_router(question, connection, timings, background_tasks, session_i
         for e in examples
     ]
 
-    # Step 3: Generate SQL and check it
     with timings.step("generate_sql"):
         generation = generate_sql(
             question,
@@ -262,7 +255,6 @@ def chat_with_database(
     session_id = request.session_id
     debug = DebugInfo(model=MODEL)
 
-    # Step 0: Input guardrail
     try:
         with timings.step("input_guard"):
             question = check_question(request.question)

@@ -29,10 +29,6 @@ class DatabaseSchema(BaseModel):
         return {table.name for table in self.tables}
 
 
-# ============================================================
-# Dynamic Database Schema
-# ============================================================
-
 def get_database_schema(engine, schema_name="public") -> DatabaseSchema:
 
     inspector = inspect(engine)
@@ -47,10 +43,6 @@ def get_database_schema(engine, schema_name="public") -> DatabaseSchema:
 
         table = TableInfo(name=table_name)
 
-        # -------------------------
-        # Columns
-        # -------------------------
-
         columns = inspector.get_columns(
             table_name,
             schema=schema_name
@@ -64,10 +56,6 @@ def get_database_schema(engine, schema_name="public") -> DatabaseSchema:
                 nullable=column["nullable"]
             ))
 
-        # -------------------------
-        # Primary Key
-        # -------------------------
-
         pk = inspector.get_pk_constraint(
             table_name,
             schema=schema_name
@@ -77,10 +65,6 @@ def get_database_schema(engine, schema_name="public") -> DatabaseSchema:
             "constrained_columns",
             []
         )
-
-        # -------------------------
-        # Foreign Keys
-        # -------------------------
 
         foreign_keys = inspector.get_foreign_keys(
             table_name,
@@ -99,10 +83,6 @@ def get_database_schema(engine, schema_name="public") -> DatabaseSchema:
 
     return schema
 
-
-# ============================================================
-# Convert Schema to LLM-Friendly Text
-# ============================================================
 
 def schema_to_text(schema: DatabaseSchema):
 

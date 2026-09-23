@@ -13,10 +13,6 @@ class QueryResult(BaseModel):
     truncated: bool = False
 
 
-# ============================================================
-# Execute SQL (read-only)
-# ============================================================
-
 def execute_sql(sql, engine) -> QueryResult:
     """Run a query in a read-only transaction with a timeout.
 

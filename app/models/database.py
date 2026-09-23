@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 
 from app.config import settings
@@ -27,3 +27,16 @@ def retry_on_disconnect(operation):
             raise
 
         return operation()
+
+
+def run_ddl(*statements: str) -> None:
+    """Run DDL statements against app_engine in one transaction, retrying
+    once on a dropped connection. Used by each subsystem's ensure_*_schema()
+    so a missing table only disables that one subsystem, not the others."""
+
+    def run():
+        with app_engine.begin() as conn:
+            for statement in statements:
+                conn.execute(text(statement))
+
+    retry_on_disconnect(run)
