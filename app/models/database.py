@@ -1,5 +1,7 @@
+import logging
+
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
 from app.config import settings
 
@@ -40,3 +42,20 @@ def run_ddl(*statements: str) -> None:
                 conn.execute(text(statement))
 
     retry_on_disconnect(run)
+
+
+def run_or_log(operation, logger: logging.Logger, message: str, *args) -> None:
+    """Run `operation()` via retry_on_disconnect; on failure, log a warning
+    and return None instead of raising.
+
+    Shared by every best-effort read/write in the app's own bookkeeping
+    tables (chat history, saved connections, workflow settings) — a storage
+    hiccup there must degrade gracefully, not break the request that
+    triggered it.
+    """
+
+    try:
+        return retry_on_disconnect(operation)
+    except SQLAlchemyError as e:
+        logger.warning(message, *args, e)
+        return None

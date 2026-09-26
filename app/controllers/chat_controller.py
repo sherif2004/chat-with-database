@@ -266,16 +266,21 @@ def chat_with_database(
 
     if cached is not None:
         try:
-            response = ChatResponse.model_validate(cached).model_copy(
-                update={"timings_ms": timings.as_model(), "cache_hit": True}
-            )
+            cached_response = ChatResponse.model_validate(cached)
         except ValidationError:
-            cached = None
+            logger.warning("Skipping unparseable cached response for session %s", session_id)
         else:
-            background_tasks.add_task(
-                save_message, session_id, question, response.model_dump(mode="json")
+            return _finish(
+                timings,
+                background_tasks,
+                session_id,
+                cached_response.debug,
+                intent=cached_response.intent,
+                question=question,
+                sql=cached_response.sql,
+                result=cached_response.result,
+                cache_hit=True,
             )
-            return response
 
     # Resolve which database this session is talking to
     try:

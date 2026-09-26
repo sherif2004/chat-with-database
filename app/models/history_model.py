@@ -3,10 +3,9 @@ import logging
 from datetime import datetime
 
 from pydantic import BaseModel
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
 
-from app.models.database import app_engine, retry_on_disconnect, run_ddl
+from app.models.database import app_engine, retry_on_disconnect, run_ddl, run_or_log
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +42,10 @@ def ensure_chat_history_schema() -> None:
         CREATE INDEX IF NOT EXISTS chat_history_session_id_created_at_idx
         ON app.chat_history (session_id, created_at)
         """,
+        """
+        CREATE INDEX IF NOT EXISTS chat_history_session_id_question_idx
+        ON app.chat_history (session_id, lower(question), created_at DESC)
+        """,
     )
 
 
@@ -65,10 +68,7 @@ def save_message(session_id: str, question: str, response: dict) -> None:
                 }
             )
 
-    try:
-        retry_on_disconnect(run)
-    except SQLAlchemyError as e:
-        logger.warning("Could not save chat history: %s", e)
+    run_or_log(run, logger, "Could not save chat history: %s")
 
 
 def get_history(session_id: str) -> list[HistoryRow]:
@@ -114,11 +114,7 @@ def get_cached_response(session_id: str, question: str) -> dict | None:
             row = result.first()
             return row.response if row else None
 
-    try:
-        return retry_on_disconnect(run)
-    except SQLAlchemyError as e:
-        logger.warning("Could not look up cached response: %s", e)
-        return None
+    return run_or_log(run, logger, "Could not look up cached response: %s")
 
 
 def get_recent_history(session_id: str, limit: int) -> list[HistoryRow]:

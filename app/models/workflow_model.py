@@ -2,9 +2,8 @@ import logging
 from typing import Literal
 
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 
-from app.models.database import app_engine, retry_on_disconnect, run_ddl
+from app.models.database import app_engine, run_ddl, run_or_log
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +48,7 @@ def set_workflow(session_id: str, workflow: Workflow) -> None:
                 {"session_id": session_id, "workflow": workflow},
             )
 
-    try:
-        retry_on_disconnect(run)
-    except SQLAlchemyError as e:
-        logger.warning("Could not save workflow preference for session %s: %s", session_id, e)
+    run_or_log(run, logger, "Could not save workflow preference for session %s: %s", session_id)
 
 
 def get_workflow(session_id: str) -> Workflow:
@@ -68,11 +64,7 @@ def get_workflow(session_id: str) -> Workflow:
             ).first()
             return row.workflow if row else None
 
-    try:
-        workflow = retry_on_disconnect(run)
-    except SQLAlchemyError as e:
-        logger.warning("Could not read workflow preference for session %s: %s", session_id, e)
-        workflow = None
+    workflow = run_or_log(run, logger, "Could not read workflow preference for session %s: %s", session_id)
 
     resolved = workflow or _DEFAULT_WORKFLOW
     _cache[session_id] = resolved

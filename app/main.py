@@ -17,25 +17,21 @@ for name in ("httpx", "httpx2"):
 logger = logging.getLogger(__name__)
 
 
+def _ensure_schema(ensure, label: str) -> None:
+    try:
+        ensure()
+    except Exception as e:
+        logger.warning("%s storage is off: %s", label, e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_default_connection()
     example_service.load_examples()
 
-    try:
-        ensure_chat_history_schema()
-    except Exception as e:
-        logger.warning("Chat history storage is off: %s", e)
-
-    try:
-        ensure_connections_schema()
-    except Exception as e:
-        logger.warning("Saved connections storage is off: %s", e)
-
-    try:
-        ensure_workflow_schema()
-    except Exception as e:
-        logger.warning("Workflow preference storage is off: %s", e)
+    _ensure_schema(ensure_chat_history_schema, "Chat history")
+    _ensure_schema(ensure_connections_schema, "Saved connections")
+    _ensure_schema(ensure_workflow_schema, "Workflow preference")
 
     yield
 

@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.models.database import app_engine, retry_on_disconnect, run_ddl
+from app.models.database import app_engine, run_ddl, run_or_log
 from app.models.schema_model import DatabaseSchema, get_database_schema, schema_to_text
 
 logger = logging.getLogger(__name__)
@@ -152,10 +152,7 @@ def _save_connection_row(session_id: str, database_url: str, label: str) -> None
                 {"session_id": session_id, "database_url": database_url, "label": label},
             )
 
-    try:
-        retry_on_disconnect(run)
-    except SQLAlchemyError as e:
-        logger.warning("Could not save connection for session %s: %s", session_id, e)
+    run_or_log(run, logger, "Could not save connection for session %s: %s", session_id)
 
 
 def _load_saved_url(session_id: str) -> str | None:
@@ -168,11 +165,7 @@ def _load_saved_url(session_id: str) -> str | None:
             ).first()
             return row.database_url if row else None
 
-    try:
-        return retry_on_disconnect(run)
-    except SQLAlchemyError as e:
-        logger.warning("Could not read saved connection for session %s: %s", session_id, e)
-        return None
+    return run_or_log(run, logger, "Could not read saved connection for session %s: %s", session_id)
 
 
 def connect(session_id: str, database_url: str, label: str | None = None) -> SessionConnection:
