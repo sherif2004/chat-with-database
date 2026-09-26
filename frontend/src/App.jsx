@@ -69,10 +69,10 @@ export default function App() {
         ...prev,
         { type: "exchange", question: trimmed, response, error: false },
       ]);
-    } catch {
+    } catch (error) {
       setTimeline((prev) => [
         ...prev,
-        { type: "exchange", question: trimmed, response: null, error: true },
+        { type: "exchange", question: trimmed, response: null, error: error.message || true },
       ]);
     } finally {
       setSending(false);

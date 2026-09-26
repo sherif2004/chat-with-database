@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.controllers import chat_controller
+from app.services.llm_service import LLMUnavailable
 from app.views.chat_view import ChatRequest, ChatResponse, HistoryEntry
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,13 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     except SQLAlchemyError:
         logger.exception("SQL execution error")
         raise HTTPException(status_code=400, detail="SQL execution error.")
+
+    except LLMUnavailable:
+        logger.exception("Language model call failed")
+        raise HTTPException(
+            status_code=503,
+            detail="The language model is unavailable right now, please try again shortly."
+        )
 
 
 @router.get("/chat/history", response_model=list[HistoryEntry])

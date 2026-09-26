@@ -17,7 +17,9 @@ export default function Message({ role, question, response, error }) {
   if (error) {
     return (
       <div className="message message-assistant">
-        <div className="bubble bubble-error">Something went wrong, try again.</div>
+        <div className="bubble bubble-error">
+          {typeof error === "string" ? error : "Something went wrong, try again."}
+        </div>
       </div>
     );
   }
