@@ -30,12 +30,6 @@ class SimilarExample(BaseModel):
     score: float
 
 
-def _point_id(question_key: str) -> str:
-    """Same question, same id, so a question can only be stored once."""
-
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, question_key))
-
-
 class QdrantExampleStore:
     """Question -> verified SQL pairs, stored in Qdrant."""
 
@@ -61,8 +55,10 @@ class QdrantExampleStore:
                 vectors_config=VectorParams(size=dimensions, distance=Distance.COSINE)
             )
 
+        # Idempotent, so collections created before question_key existed get the index too.
+        for field in ("question_key", "sql_key"):
             self.client.create_payload_index(
-                self.collection, "sql_key", PayloadSchemaType.KEYWORD
+                self.collection, field, PayloadSchemaType.KEYWORD
             )
 
         stored = self.client.get_collection(self.collection).config.params.vectors.size
@@ -99,34 +95,36 @@ class QdrantExampleStore:
         ]
 
     def add(self, question: str, sql: str, vector) -> bool:
-        """Remember a pair. Returns False if the question or SQL is already stored."""
+        """Remember a pair. Returns False if the question or SQL is already stored.
+
+        The SQL check is deliberate: many phrasings of one query would
+        otherwise fill the few-shot prompt with near-identical examples.
+        """
 
         question_key = normalize_text(question)
         sql_key = normalize_text(sql)
-        point_id = _point_id(question_key)
 
-        if self.client.retrieve(self.collection, ids=[point_id]):
-            return False
-
-        same_sql = self.client.count(
+        already_stored = self.client.count(
             self.collection,
-            count_filter=Filter(must=[
-                FieldCondition(key="sql_key", match=MatchValue(value=sql_key))
+            count_filter=Filter(should=[
+                FieldCondition(key="question_key", match=MatchValue(value=question_key)),
+                FieldCondition(key="sql_key", match=MatchValue(value=sql_key)),
             ]),
             exact=True
         ).count
 
-        if same_sql:
+        if already_stored:
             return False
 
         self.client.upsert(
             self.collection,
             points=[PointStruct(
-                id=point_id,
+                id=str(uuid.uuid4()),
                 vector=list(vector),
                 payload={
                     "question": question,
                     "sql": sql,
+                    "question_key": question_key,
                     "sql_key": sql_key,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 }
