@@ -445,6 +445,15 @@ body {
   color: var(--text-muted);
 }
 
+.message-cache-badge {
+  font-size: 0.7em;
+  font-weight: 600;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
 .message-details-toggle {
   background: none;
   border: none;

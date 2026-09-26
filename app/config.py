@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
     qdrant_collection: str = "chat_examples"
-    few_shot_min_score: float = 0.7
+    few_shot_min_score: float = 0.6
 
 
 settings = Settings()

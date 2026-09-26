@@ -7,7 +7,7 @@ from app.guardrails.errors import GuardrailError, UnknownTableError
 from app.guardrails.input_guard import check_question
 from app.guardrails.sql_guard import validate_sql
 from app.models.connection_model import DatabaseConnectionError, SessionConnection, get_or_default
-from app.models.history_model import get_history, get_recent_history, save_message
+from app.models.history_model import get_cached_response, get_history, get_recent_history, save_message
 from app.models.query_model import execute_sql
 from app.models.workflow_model import get_workflow
 from app.services.example_service import find_similar, remember
@@ -260,6 +260,22 @@ def chat_with_database(
             question = check_question(request.question)
     except GuardrailError as e:
         return _message(timings, background_tasks, session_id, "unsafe", request.question, str(e), debug)
+
+    with timings.step("cache_lookup"):
+        cached = get_cached_response(session_id, question)
+
+    if cached is not None:
+        try:
+            response = ChatResponse.model_validate(cached).model_copy(
+                update={"timings_ms": timings.as_model(), "cache_hit": True}
+            )
+        except ValidationError:
+            cached = None
+        else:
+            background_tasks.add_task(
+                save_message, session_id, question, response.model_dump(mode="json")
+            )
+            return response
 
     # Resolve which database this session is talking to
     try:

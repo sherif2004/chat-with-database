@@ -68,6 +68,7 @@ export default function Message({ role, question, response, error }) {
 
         {hasDetails && (
           <div className="message-meta">
+            {response.cache_hit && <span className="message-cache-badge">Cached</span>}
             {totalMs != null && <span className="message-latency">{formatMs(totalMs)}</span>}
             <button
               type="button"

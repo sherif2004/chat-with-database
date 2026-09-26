@@ -89,6 +89,38 @@ def get_history(session_id: str) -> list[HistoryRow]:
     return retry_on_disconnect(run)
 
 
+def get_cached_response(session_id: str, question: str) -> dict | None:
+    """Exact-match cache lookup: the response of the most recent identical
+    question asked in this session, or None on a miss.
+
+    Matching is a plain case-insensitive string comparison (no embeddings,
+    no fuzzy matching) — a deliberate word-for-word match, not semantic
+    similarity like find_similar() uses for few-shot examples.
+    """
+
+    def run():
+        with app_engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT response
+                    FROM app.chat_history
+                    WHERE session_id = :session_id
+                      AND lower(question) = lower(:question)
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """),
+                {"session_id": session_id, "question": question}
+            )
+            row = result.first()
+            return row.response if row else None
+
+    try:
+        return retry_on_disconnect(run)
+    except SQLAlchemyError as e:
+        logger.warning("Could not look up cached response: %s", e)
+        return None
+
+
 def get_recent_history(session_id: str, limit: int) -> list[HistoryRow]:
     """Last `limit` exchanges, oldest first. Unlike get_history(), this
     fetches only `limit` rows from the database instead of the whole

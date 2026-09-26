@@ -62,6 +62,7 @@ class ChatResponse(BaseModel):
     result: Result
     timings_ms: StepTimings = StepTimings()
     debug: DebugInfo | None = None
+    cache_hit: bool = False
 
 
 class HistoryEntry(BaseModel):
