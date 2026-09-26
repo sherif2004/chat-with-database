@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.models.database import app_engine, retry_on_disconnect, run_ddl, run_or_log
+from app.utils import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,11 @@ def ensure_chat_history_schema() -> None:
         CREATE INDEX IF NOT EXISTS chat_history_session_id_created_at_idx
         ON app.chat_history (session_id, created_at)
         """,
+        "ALTER TABLE app.chat_history ADD COLUMN IF NOT EXISTS question_key TEXT",
+        "DROP INDEX IF EXISTS app.chat_history_session_id_question_idx",
         """
-        CREATE INDEX IF NOT EXISTS chat_history_session_id_question_idx
-        ON app.chat_history (session_id, lower(question), created_at DESC)
+        CREATE INDEX IF NOT EXISTS chat_history_session_id_question_key_idx
+        ON app.chat_history (session_id, question_key, created_at DESC)
         """,
     )
 
@@ -58,12 +61,13 @@ def save_message(session_id: str, question: str, response: dict) -> None:
         with app_engine.begin() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO app.chat_history (session_id, question, response)
-                    VALUES (:session_id, :question, CAST(:response AS JSONB))
+                    INSERT INTO app.chat_history (session_id, question, question_key, response)
+                    VALUES (:session_id, :question, :question_key, CAST(:response AS JSONB))
                 """),
                 {
                     "session_id": session_id,
                     "question": question,
+                    "question_key": normalize_text(question),
                     "response": json.dumps(response),
                 }
             )
@@ -93,10 +97,15 @@ def get_cached_response(session_id: str, question: str) -> dict | None:
     """Exact-match cache lookup: the response of the most recent identical
     question asked in this session, or None on a miss.
 
-    Matching is a plain case-insensitive string comparison (no embeddings,
-    no fuzzy matching) — a deliberate word-for-word match, not semantic
-    similarity like find_similar() uses for few-shot examples.
+    Matching is on normalize_text(): case, punctuation and extra whitespace
+    are ignored, but the words must be the same (no embeddings, no fuzzy
+    matching — not the semantic similarity find_similar() uses).
     """
+
+    question_key = normalize_text(question)
+
+    if not question_key:
+        return None
 
     def run():
         with app_engine.connect() as conn:
@@ -105,11 +114,11 @@ def get_cached_response(session_id: str, question: str) -> dict | None:
                     SELECT response
                     FROM app.chat_history
                     WHERE session_id = :session_id
-                      AND lower(question) = lower(:question)
+                      AND question_key = :question_key
                     ORDER BY created_at DESC
                     LIMIT 1
                 """),
-                {"session_id": session_id, "question": question}
+                {"session_id": session_id, "question_key": question_key}
             )
             row = result.first()
             return row.response if row else None
