@@ -21,11 +21,19 @@ class TextResult(BaseModel):
     answer: str
 
 
-class TableResult(BaseModel):
-    type: Literal["table"] = "table"
+class QueryTable(BaseModel):
+    sql: str
     columns: list[str]
     rows: list[list[Any]]
     truncated: bool = False
+
+
+class TableResult(BaseModel):
+    """One or more queries run for a single question, each with its own
+    SQL and rows, plus one natural-language answer covering all of them."""
+
+    type: Literal["table"] = "table"
+    queries: list[QueryTable]
     answer: str | None = None
 
 
@@ -56,9 +64,12 @@ class DebugInfo(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    intent: Literal["greeting", "off_topic", "unsafe", "data_question", "connection_error"]
+    intent: Literal[
+        "greeting", "off_topic", "unsafe", "data_question",
+        "connection_error", "needs_clarification"
+    ]
     question: str
-    sql: str | None = None
+    sql: list[str] | None = None
     result: Result
     timings_ms: StepTimings = StepTimings()
     debug: DebugInfo | None = None

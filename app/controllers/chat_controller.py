@@ -21,8 +21,8 @@ from app.views.chat_view import (
     ExampleUsed,
     HistoryEntry,
     MessageResult,
+    QueryTable,
     TableResult,
-    TextResult,
 )
 
 GREETING_MESSAGE = (
@@ -121,35 +121,42 @@ def _answer_data_question(
 
     try:
         with timings.step("sql_guard"):
-            sql = validate_sql(sql, connection.schema.table_names)
+            statements = validate_sql(sql, connection.schema.table_names)
     except UnknownTableError:
         return _message(timings, background_tasks, session_id, "off_topic", question, CANNOT_ANSWER_MESSAGE, debug)
     except GuardrailError as e:
         return _message(timings, background_tasks, session_id, "unsafe", question, f"{UNSAFE_MESSAGE} ({e})", debug)
 
     with timings.step("execute_sql"):
-        query = execute_sql(sql, connection.engine)
+        queries = [execute_sql(stmt, connection.engine) for stmt in statements]
 
     # Learn from the chat (after the response is sent): the pair passed
-    # the guard, ran, and returned rows
-    if query.rows:
-        background_tasks.add_task(remember, question, sql, question_vector)
+    # the guard, ran, and returned rows. Only worth remembering as an
+    # example when every statement actually returned something.
+    if all(query.rows for query in queries):
+        background_tasks.add_task(remember, question, "; ".join(statements), question_vector)
 
-    # Format the result — return both the raw table and an LLM-generated
+    # Format the result — return both the raw table(s) and an LLM-generated
     # natural-language answer together. The LLM is asked even when there
     # are no rows, so the "no data" reply is still in the question's own
     # language instead of a fixed English string.
-    records = [dict(zip(query.columns, row)) for row in query.rows]
+    answer_inputs = [
+        {"sql": stmt, "rows": [dict(zip(query.columns, row)) for row in query.rows]}
+        for stmt, query in zip(statements, queries)
+    ]
 
     with timings.step("generate_answer"):
-        answer, answer_prompt, answer_usage = generate_answer(question, sql, records)
+        answer, answer_prompt, answer_usage = generate_answer(question, answer_inputs)
     debug.prompts["generate_answer"] = answer_prompt
     _record_usage(debug, "generate_answer", answer_usage)
 
-    if not query.rows:
-        result = TextResult(answer=answer)
-    else:
-        result = TableResult(**query.model_dump(), answer=answer)
+    result = TableResult(
+        queries=[
+            QueryTable(sql=stmt, **query.model_dump(exclude={"rows"}), rows=query.rows)
+            for stmt, query in zip(statements, queries)
+        ],
+        answer=answer,
+    )
 
     return _finish(
         timings,
@@ -158,7 +165,7 @@ def _answer_data_question(
         debug,
         intent="data_question",
         question=question,
-        sql=sql,
+        sql=statements,
         result=result
     )
 
@@ -198,6 +205,12 @@ def _chat_with_router(question, connection, timings, background_tasks, session_i
         )
     debug.prompts["generate_sql"] = generation.prompt
     _record_usage(debug, "generate_sql", generation.usage)
+
+    if generation.clarification_question:
+        return _message(
+            timings, background_tasks, session_id, "needs_clarification",
+            question, generation.clarification_question, debug
+        )
 
     if not generation.can_answer:
         message = generation.cannot_answer_message or CANNOT_ANSWER_MESSAGE
@@ -239,6 +252,9 @@ def _chat_without_router(question, connection, timings, background_tasks, sessio
 
     if generation.intent == "cannot_answer":
         return _message(timings, background_tasks, session_id, "off_topic", question, generation.reply or CANNOT_ANSWER_MESSAGE, debug)
+
+    if generation.intent == "needs_clarification":
+        return _message(timings, background_tasks, session_id, "needs_clarification", question, generation.reply or CANNOT_ANSWER_MESSAGE, debug)
 
     return _answer_data_question(
         generation.sql, question, connection, timings, background_tasks, session_id, debug,

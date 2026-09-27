@@ -37,31 +37,38 @@ export default function Message({ role, question, response, error }) {
               {result.answer && (
                 <p dir="auto">{result.answer}</p>
               )}
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      {result.columns.map((column) => (
-                        <th key={column} dir="auto">
-                          {column}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.rows.map((row, rowIndex) => (
-                      <tr key={rowIndex}>
-                        {row.map((cell, cellIndex) => (
-                          <td key={cellIndex} dir="auto">
-                            {String(cell)}
-                          </td>
+              {result.queries.map((query, queryIndex) => (
+                <div key={queryIndex}>
+                  {result.queries.length > 1 && (
+                    <p className="query-label">Query {queryIndex + 1} of {result.queries.length}</p>
+                  )}
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          {query.columns.map((column) => (
+                            <th key={column} dir="auto">
+                              {column}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {query.rows.map((row, rowIndex) => (
+                          <tr key={rowIndex}>
+                            {row.map((cell, cellIndex) => (
+                              <td key={cellIndex} dir="auto">
+                                {String(cell)}
+                              </td>
+                            ))}
+                          </tr>
                         ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {result.truncated && <p className="truncated-note">Results truncated.</p>}
+                      </tbody>
+                    </table>
+                  </div>
+                  {query.truncated && <p className="truncated-note">Results truncated.</p>}
+                </div>
+              ))}
             </>
           ) : (
             <p dir="auto">{result.type === "message" ? result.message : result.answer}</p>

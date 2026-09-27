@@ -25,6 +25,10 @@ _FORBIDDEN_FUNCTIONS = {
 
 _ALLOWED_SCHEMAS = {"", "public"}
 
+# Upper bound on how many SELECTs one question may run, so a question that
+# genuinely needs several independent result sets is still cheap and fast.
+MAX_STATEMENTS = 5
+
 
 def _function_name(func: exp.Expression) -> str:
     if isinstance(func, exp.Anonymous):
@@ -32,18 +36,7 @@ def _function_name(func: exp.Expression) -> str:
     return func.sql_name().lower()
 
 
-def validate_sql(sql: str, allowed_tables: set[str]) -> str:
-    """Accept only a single read-only SELECT over known tables."""
-
-    try:
-        statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
-    except SqlglotError:
-        raise GuardrailError("The generated query could not be parsed.")
-
-    if len(statements) != 1:
-        raise GuardrailError("Exactly one SQL statement is allowed.")
-
-    statement = statements[0]
+def _validate_statement(statement, allowed_tables: set[str]) -> str:
 
     if not isinstance(statement, exp.Query):
         raise GuardrailError("Only SELECT queries are allowed.")
@@ -70,3 +63,21 @@ def validate_sql(sql: str, allowed_tables: set[str]) -> str:
             raise GuardrailError(f"The function {name} is not allowed.")
 
     return statement.sql(dialect="postgres")
+
+
+def validate_sql(sql: str, allowed_tables: set[str]) -> list[str]:
+    """Accept only read-only SELECTs over known tables, one or several
+    (up to MAX_STATEMENTS), and return each validated statement."""
+
+    try:
+        statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
+    except SqlglotError:
+        raise GuardrailError("The generated query could not be parsed.")
+
+    if not statements:
+        raise GuardrailError("At least one SQL statement is required.")
+
+    if len(statements) > MAX_STATEMENTS:
+        raise GuardrailError(f"At most {MAX_STATEMENTS} SQL statements are allowed.")
+
+    return [_validate_statement(statement, allowed_tables) for statement in statements]

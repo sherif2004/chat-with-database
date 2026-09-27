@@ -96,10 +96,10 @@ export default function MessageDetails({ response }) {
         )}
       </div>
 
-      {sql && (
+      {sql?.length > 0 && (
         <div className="details-section">
           <div className="details-heading">SQL</div>
-          <pre className="details-code">{sql}</pre>
+          <pre className="details-code">{sql.join(";\n\n")}</pre>
         </div>
       )}
 

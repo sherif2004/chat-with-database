@@ -80,6 +80,7 @@ class _SQLDraft(BaseModel):
     can_answer: bool
     sql: str | None = None
     cannot_answer_message: str | None = None
+    clarification_question: str | None = None
 
 
 class SQLGeneration(_SQLDraft):
@@ -99,8 +100,13 @@ def generate_sql(
 
     if draft is None or not draft.can_answer or not (draft.sql or "").strip():
         message = draft.cannot_answer_message if draft else None
+        clarification = draft.clarification_question if draft else None
         return SQLGeneration(
-            can_answer=False, cannot_answer_message=message or None, prompt=prompt, usage=usage
+            can_answer=False,
+            cannot_answer_message=message or None,
+            clarification_question=clarification or None,
+            prompt=prompt,
+            usage=usage,
         )
 
     return SQLGeneration(can_answer=True, sql=draft.sql.strip(), prompt=prompt, usage=usage)
@@ -108,20 +114,27 @@ def generate_sql(
 
 def generate_answer(
     question,
-    sql,
-    database_result
+    queries: list[dict]
 ) -> tuple[str, str, TokenUsage | None]:
+    """`queries` is [{"sql", "rows"}, ...], one entry per executed
+    statement; `rows` is trimmed to ANSWER_ROW_LIMIT here."""
 
-    prompt = answer_prompt(
-        question, sql, database_result[:ANSWER_ROW_LIMIT], len(database_result)
-    )
+    trimmed = [
+        {"sql": q["sql"], "rows": q["rows"][:ANSWER_ROW_LIMIT], "total_rows": len(q["rows"])}
+        for q in queries
+    ]
+
+    prompt = answer_prompt(question, trimmed)
     answer, usage = ask_llm(prompt, max_output_tokens=800)
 
     return answer, prompt, usage
 
 
 class _RouteAndSqlDraft(BaseModel):
-    intent: Literal["greeting", "off_topic", "unsafe", "data_question", "cannot_answer"]
+    intent: Literal[
+        "greeting", "off_topic", "unsafe", "data_question",
+        "cannot_answer", "needs_clarification"
+    ]
     reply: str | None = None
     sql: str | None = None
 
