@@ -10,7 +10,8 @@ from app.guardrails.errors import GuardrailError, UnknownTableError
 from app.guardrails.input_guard import check_question
 from app.guardrails.sql_guard import validate_sql
 from app.models.connection_model import DatabaseConnectionError, get_or_default
-from app.models.history_model import get_cached_response, get_recent_history
+from app.models.history_model import get_recent_history
+from app.services.cache_service import get_cached_response
 from app.models.query_model import execute_sql
 from app.models.workflow_model import get_workflow
 from app.services.example_service import find_similar, remember

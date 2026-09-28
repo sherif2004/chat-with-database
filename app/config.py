@@ -27,5 +27,8 @@ class Settings(BaseSettings):
     qdrant_collection: str = "chat_examples"
     few_shot_min_score: float = 0.6
 
+    redis_url: str = "redis://localhost:6379/0"
+    cache_ttl_seconds: int = 3600
+
 
 settings = Settings()

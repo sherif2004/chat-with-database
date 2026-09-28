@@ -1,4 +1,5 @@
-# Qdrant for the few-shot examples. Run from the project root:
+# Qdrant for the few-shot examples, Redis for the exact-match response
+# cache. Run from the project root:
 #   docker compose -f docker/docker-compose.yml up -d
 name: chat-with-database
 
@@ -9,6 +10,12 @@ services:
       - "127.0.0.1:6333:6333"
     volumes:
       - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
     restart: unless-stopped
 
 volumes:

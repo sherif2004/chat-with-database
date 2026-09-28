@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from app.graphs.chat_graph import get_chat_graph
 from app.models.history_model import get_history, save_message
+from app.services.cache_service import set_cached_response
 from app.services.llm_service import MODEL
 from app.timing import Timings
 from app.views.chat_view import ChatRequest, ChatResponse, DebugInfo, HistoryEntry
@@ -23,9 +24,13 @@ def _finish(timings, background_tasks, session_id, debug, **fields):
         response.timings_ms
     )
 
-    background_tasks.add_task(
-        save_message, session_id, fields["question"], response.model_dump(mode="json")
-    )
+    dumped = response.model_dump(mode="json")
+    background_tasks.add_task(save_message, session_id, fields["question"], dumped)
+
+    # Cache hits aren't re-cached — the entry that served this one is
+    # already there and still fresh.
+    if not fields.get("cache_hit"):
+        background_tasks.add_task(set_cached_response, session_id, fields["question"], dumped)
 
     return response
 
