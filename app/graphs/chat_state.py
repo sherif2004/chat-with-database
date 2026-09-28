@@ -25,7 +25,6 @@ class GraphState(TypedDict, total=False):
     cached_response: ChatResponse
 
     # Session context
-    workflow: str
     history: list[dict]
 
     # Few-shot retrieval

@@ -17,41 +17,37 @@ Browser ──POST /chat──▶ route ──▶ controller ──▶ graph.inv
                                                   cache_lookup (Redis)
                                           hit  │              │ miss
                                                ▼              ▼
-                                       return stored     load_workflow
-                                       answer                 │
-                                                  ┌────────────┴────────────┐
-                                                  ▼                         ▼
-                                          resolve_connection          load_history
-                                                  └────────────┬────────────┘
-                                                     (parallel, join at)
-                                                       route_after_context
-                                          ┌────────────────────┴────────────────────┐
-                                          ▼ workflow = router                       ▼ workflow = no_router
-                                   classify_intent (LLM)                    retrieve_examples (Qdrant)
-                                     │ greeting/off_topic/unsafe                     │
-                                     │  → reply, stop                                ▼
-                                     ▼ data_question                    generate_sql (route + SQL, one LLM call)
-                              retrieve_examples (Qdrant)                    │ greeting/off_topic/unsafe/
-                                     ▼                                      │ cannot_answer → reply, stop
-                              generate_sql (LLM call)   ◀───────────┐       ▼ data_question
-                                     │ cannot answer → reply, stop  │       │
-                                     └──────────────┬───────────────┘       │
-                                                     ▼                      │
-                                                validate_sql ◀──────────────┘
-                                                     ▼
-                                                execute_sql (read-only, Postgres)
-                                          ok  │              │ DB rejects it
-                                              ▼              ▼ (< SQL_MAX_ATTEMPTS)
-                                       generate_answer   retry: loop back to generate_sql,
-                                          (LLM call)      the failed SQL + DB error included
-                                              ▼              │ (attempts exhausted)
-                                       response returned      ▼
-                                                          sql_failed → reply, stop
+                                       return stored  ┌───────┴───────┐
+                                       answer          ▼               ▼
+                                          resolve_connection      load_history
+                                                       └───────┬───────┘
+                                                        (parallel, join at)
+                                                        route_after_context
+                                                              │
+                                                       classify_intent (LLM)
+                                                  │ greeting/off_topic/unsafe
+                                                  │  → reply, stop
+                                                  ▼ data_question
+                                           retrieve_examples (Qdrant)
+                                                  ▼
+                                           generate_sql (LLM call)   ◀───────────┐
+                                             │ cannot answer → reply, stop        │
+                                             ▼                                    │
+                                        validate_sql                              │
+                                             ▼                                    │
+                                        execute_sql (read-only, Postgres)         │
+                                  ok  │              │ DB rejects it              │
+                                      ▼              ▼ (< SQL_MAX_ATTEMPTS)       │
+                               generate_answer   retry: loop back to generate_sql ┘
+                                  (LLM call)      the failed SQL + DB error included
+                                      ▼              │ (attempts exhausted)
+                               response returned      ▼
+                                                   sql_failed → reply, stop
 
-                                  after the response is sent, in the background:
-                                    • save the exchange to app.chat_history
-                                    • cache the response in Redis
-                                    • remember question → SQL in Qdrant (if it returned rows)
+                          after the response is sent, in the background:
+                            • save the exchange to app.chat_history
+                            • cache the response in Redis
+                            • remember question → SQL in Qdrant (if it returned rows)
 ```
 
 Every step is timed (a retried step's duration accumulates across attempts). The
@@ -67,16 +63,15 @@ Code: `app/graphs/chat_graph.py` (nodes), `app/controllers/chat_controller.py`
 |---|---|---|---|
 | 1 | `input_guard` | Trims the text; rejects empty or too-long questions (`MAX_QUESTION_LENGTH`) and prompt-injection phrasings. | Yes → `unsafe` message |
 | 2 | `cache_lookup` | Normalizes the question and looks it up in Redis, scoped to this session. | Yes → returns the stored answer, `cache_hit: true` |
-| 3 | `load_workflow` | Reads the session's router/no_router preference. | No |
-| 4 | `resolve_connection` \| `load_history` | Run in parallel (both only need `session_id`): finds the target database (own saved connection or the `.env` default), and loads the last 3 exchanges so follow-ups like "just for Iron Maiden" work. | Connection failure → `connection_error` message |
-| 5 | `classify_intent` (router workflow only) | LLM call: `greeting` / `off_topic` / `unsafe` / `data_question`. | First three → reply, stop |
-| 6 | `retrieve_examples` | Embeds the question and fetches similar solved question→SQL pairs from Qdrant. | No |
-| 7 | `generate_sql` | Router: SQL-only LLM call. No-router: one combined classify+SQL call. Also the **retry target** — see below. | Can't answer / clarification needed → reply, stop |
-| 8 | `validate_sql` | Parses the generated SQL with sqlglot: one or more `SELECT`s only, known tables only, no dangerous functions. | Yes → `unsafe` / can't-answer message (not retried — a guard rejection is a safety issue, not a fixable mistake) |
-| 9 | `execute_sql` | Runs each statement in a read-only transaction with a statement timeout and a row cap (`MAX_ROWS`). | DB rejects it → retry (see below); exhausted → can't-answer message |
-| 10 | `generate_answer` | The LLM writes a short answer in the question's language from the first 20 rows of each statement. | LLM down → HTTP 503 |
-| 11 | *(controller)* `_finish` | Builds the response; schedules the background tasks below. | — |
-| 12 | Background tasks | Saves the exchange to `chat_history`; caches the response in Redis; if a query returned rows, stores question → SQL in Qdrant as a future few-shot example. | Failures are logged, never shown |
+| 3 | `resolve_connection` \| `load_history` | Run in parallel (both only need `session_id`): finds the target database (own saved connection or the `.env` default), and loads the last 3 exchanges so follow-ups like "just for Iron Maiden" work. | Connection failure → `connection_error` message |
+| 4 | `classify_intent` | LLM call (`AZURE_OPENAI_DEPLOYMENT_LIGHT`): `greeting` / `off_topic` / `unsafe` / `data_question`. | First three → reply, stop |
+| 5 | `retrieve_examples` | Embeds the question and fetches similar solved question→SQL pairs from Qdrant. | No |
+| 6 | `generate_sql` | LLM call (`AZURE_OPENAI_DEPLOYMENT`, the capable model) that writes the SQL. Also the **retry target** — see below. | Can't answer / clarification needed → reply, stop |
+| 7 | `validate_sql` | Parses the generated SQL with sqlglot: one or more `SELECT`s only, known tables only, no dangerous functions. | Yes → `unsafe` / can't-answer message (not retried — a guard rejection is a safety issue, not a fixable mistake) |
+| 8 | `execute_sql` | Runs each statement in a read-only transaction with a statement timeout and a row cap (`MAX_ROWS`). | DB rejects it → retry (see below); exhausted → can't-answer message |
+| 9 | `generate_answer` | LLM call (`AZURE_OPENAI_DEPLOYMENT_LIGHT`) that writes a short answer in the question's language from the first 20 rows of each statement. | LLM down → HTTP 503 |
+| 10 | *(controller)* `_finish` | Builds the response; schedules the background tasks below. | — |
+| 11 | Background tasks | Saves the exchange to `chat_history`; caches the response in Redis; if a query returned rows, stores question → SQL in Qdrant as a future few-shot example. | Failures are logged, never shown |
 
 ## The SQL retry loop
 
@@ -87,21 +82,6 @@ the model can fix its own mistake — up to `SQL_MAX_ATTEMPTS` (3) attempts tota
 before giving up with a normal "can't answer" message instead of an HTTP error.
 A `validate_sql` (guardrail) rejection is **not** retried — that's a safety
 judgment, not something feeding back the error would fix.
-
-## The two workflows
-
-Chosen per session with the **Workflow** radio buttons in the sidebar.
-
-**With router** (default)
-1. `classify_intent`: a small LLM call classifies the message. Only `data_question` continues.
-2. `retrieve_examples`, then `generate_sql` (SQL-only LLM call).
-
-**No router**
-1. `retrieve_examples` runs first (always, since the intent isn't known yet).
-2. `generate_sql` makes one combined LLM call that classifies *and* writes the SQL.
-
-Both converge on `validate_sql` → `execute_sql` → `generate_answer`. No-router saves
-one LLM round trip but folds the safety judgment into the SQL prompt.
 
 ## Few-shot examples (Qdrant)
 
@@ -125,7 +105,7 @@ one LLM round trip but folds the safety judgment into the SQL prompt.
 - `{"type": "message", "message": "..."}` — a fixed or translated reply
 - `{"type": "table", "queries": [{"sql", "columns", "rows", "truncated"}, ...], "answer": "..."}` — one entry per SQL statement executed (usually one), plus one natural-language answer covering all of them
 
-Also returned: `sql` (the executed statement(s)), `timings_ms`, `debug` (model, workflow, prompts, token usage, examples used) and `cache_hit`.
+Also returned: `sql` (the executed statement(s)), `timings_ms`, `debug` (model, prompts, token usage, examples used) and `cache_hit`.
 
 ## Errors
 
@@ -137,5 +117,5 @@ Also returned: `sql` (the executed statement(s)), `timings_ms`, `debug` (model, 
 | SQL references a table that doesn't exist | "the data doesn't contain the information" message (not retried) |
 | SQL fails while running (bad column, syntax, ...) | Retried up to `SQL_MAX_ATTEMPTS` (3) with the error fed back to the model; a "can't answer" message only after all attempts fail |
 | Azure OpenAI call fails or times out (`LLM_TIMEOUT_SECONDS`) | HTTP 503 with a "language model is unavailable" message; not saved, not cached |
-| History, cache, or settings storage down | Logged; the chat keeps working without it |
+| History or cache storage down | Logged; the chat keeps working without it |
 | Model output can't be parsed | Treated as `off_topic` / can't answer — never sent to SQL |

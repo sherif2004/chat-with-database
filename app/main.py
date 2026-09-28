@@ -6,8 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.models.connection_model import ensure_connections_schema, init_default_connection
 from app.models.history_model import ensure_chat_history_schema
-from app.models.workflow_model import ensure_workflow_schema
-from app.routes import chat_route, connection_route, settings_route
+from app.routes import chat_route, connection_route
 from app.services import example_service
 
 logging.basicConfig(level=logging.INFO)
@@ -31,7 +30,6 @@ async def lifespan(app: FastAPI):
 
     _ensure_schema(ensure_chat_history_schema, "Chat history")
     _ensure_schema(ensure_connections_schema, "Saved connections")
-    _ensure_schema(ensure_workflow_schema, "Workflow preference")
 
     yield
 
@@ -47,4 +45,3 @@ app.add_middleware(
 
 app.include_router(chat_route.router)
 app.include_router(connection_route.router)
-app.include_router(settings_route.router)

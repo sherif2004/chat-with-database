@@ -54,23 +54,3 @@ export function connectDatabase(sessionId, databaseUrl, label) {
     "Connection failed"
   );
 }
-
-export function getWorkflow(sessionId) {
-  return request(
-    `/settings/workflow?session_id=${encodeURIComponent(sessionId)}`,
-    undefined,
-    "Failed to load workflow setting"
-  );
-}
-
-export function setWorkflow(sessionId, workflow) {
-  return request(
-    "/settings/workflow",
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, workflow }),
-    },
-    "Failed to update workflow setting"
-  );
-}

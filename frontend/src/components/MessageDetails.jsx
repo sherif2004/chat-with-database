@@ -6,15 +6,9 @@ const STEP_LABELS = {
   router: "Router",
   retrieve_examples: "Retrieve examples",
   generate_sql: "Generate SQL",
-  route_and_generate_sql: "Route + generate SQL",
   sql_guard: "SQL guard",
   execute_sql: "Execute SQL",
   generate_answer: "Generate answer",
-};
-
-const WORKFLOW_LABELS = {
-  router: "With router",
-  no_router: "No router (merged call)",
 };
 
 export function formatMs(ms) {
@@ -87,11 +81,6 @@ export default function MessageDetails({ response }) {
         {debug?.model && (
           <div className="details-row">
             Model: <code>{debug.model}</code>
-          </div>
-        )}
-        {debug?.workflow && (
-          <div className="details-row">
-            Workflow: <code>{WORKFLOW_LABELS[debug.workflow] || debug.workflow}</code>
           </div>
         )}
       </div>

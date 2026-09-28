@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     azure_openai_api_key: str
     azure_openai_endpoint: str
     azure_openai_deployment: str
+    azure_openai_deployment_light: str
     azure_openai_api_version: str = "2025-03-01-preview"
     llm_timeout_seconds: float = 30
 

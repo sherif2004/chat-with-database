@@ -14,12 +14,11 @@ app/
                    chat_graph.py (nodes/edges, incl. the SQL retry loop),
                    chat_state.py (graph state shape)
   models/          data access: app database, chat history (the durable
-                   conversation record), saved connections, workflow
-                   setting, schema introspection, SQL execution, Qdrant
-                   example store
+                   conversation record), saved connections, schema
+                   introspection, SQL execution, Qdrant example store
   views/           request/response schemas
   controllers/     invokes the graph, turns the final state into a response
-  routes/          FastAPI endpoints (chat, connections, settings)
+  routes/          FastAPI endpoints (chat, connections)
   services/        Azure OpenAI calls (llm_service), all prompts (prompts.py),
                    the intent router, embeddings, few-shot example lookup,
                    the Redis response cache (cache_service.py)
@@ -63,7 +62,7 @@ diagram and error table: [docs/workflow.md](docs/workflow.md).
 1. **Input guard** – length limit and prompt-injection patterns.
 2. **Answer cache (Redis)** – if the same question (case, punctuation and extra spaces ignored) was already asked in this session, the stored answer is returned from Redis. No LLM call, no SQL. The response has `cache_hit: true`. Entries expire after `CACHE_TTL_SECONDS`.
 3. **Connection + history** – picks the session's database and loads the last 3 exchanges (run in parallel, since neither depends on the other) so follow-ups work.
-4. **Router or no-router workflow** (chosen per session in the sidebar) – *with router*: a small LLM call classifies the message (`greeting`, `data_question`, `off_topic`, `unsafe`) and only `data_question` continues. *No router*: one combined call classifies and writes the SQL, one fewer round trip.
+4. **Router** – a small LLM call classifies the message (`greeting`, `data_question`, `off_topic`, `unsafe`) and only `data_question` continues.
 5. **Dynamic few-shot** – the question is embedded, and stored question→SQL pairs that are similar enough (found in Qdrant) are added to the SQL prompt.
 6. **SQL guard** – parses the generated SQL (sqlglot): one `SELECT` only, known tables only, no `pg_*`/`dblink`/`set_config`-style functions.
 7. **Read-only execution, with retry** – runs in a read-only transaction with a statement timeout and a row cap. If Postgres itself rejects the query (bad column, syntax slip the guard let through, ...), the error is fed back to the model and it gets up to 3 attempts total before falling back to a "can't answer" message — no more HTTP 500s on a bad query.
@@ -79,14 +78,24 @@ Limits are set with `MAX_QUESTION_LENGTH`, `MAX_ROWS` and `STATEMENT_TIMEOUT_MS`
 ```
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
-AZURE_OPENAI_DEPLOYMENT=<chat deployment name>
+AZURE_OPENAI_DEPLOYMENT=<capable chat deployment, e.g. gpt-4.1-mini>
+AZURE_OPENAI_DEPLOYMENT_LIGHT=<cheap chat deployment, e.g. gpt-4.1-nano>
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<embedding deployment name>
 # optional
 AZURE_OPENAI_API_VERSION=2025-03-01-preview
 LLM_TIMEOUT_SECONDS=30
 ```
 
-Use deployment names, not model names. The chat deployment must support structured (JSON schema) output, which the router and SQL generation use. If an Azure call fails or times out, `/chat` returns HTTP 503 with a readable message.
+Use deployment names, not model names. Both chat deployments must support
+structured (JSON schema) output. If an Azure call fails or times out, `/chat`
+returns HTTP 503 with a readable message.
+
+**Hybrid models:** `AZURE_OPENAI_DEPLOYMENT` (the capable model) writes the SQL —
+the one task that genuinely needs strong reasoning (joins, multi-statement
+decisions, schema disambiguation). `AZURE_OPENAI_DEPLOYMENT_LIGHT` (the cheap
+model) handles the two easier tasks: classifying intent and turning query
+results into a sentence. If you don't want this split, set both to the same
+deployment.
 
 ## Answer cache
 

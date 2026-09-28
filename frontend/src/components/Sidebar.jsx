@@ -1,7 +1,7 @@
 import { useState } from "react";
 import SchemaTree from "./SchemaTree";
 
-export default function Sidebar({ connection, connecting, onConnect, workflow, onWorkflowChange }) {
+export default function Sidebar({ connection, connecting, onConnect }) {
   const [formOpen, setFormOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
@@ -81,44 +81,6 @@ export default function Sidebar({ connection, connecting, onConnect, workflow, o
             </button>
           </form>
         )}
-      </div>
-
-      <div className="sidebar-section">
-        <div className="sidebar-heading">Workflow</div>
-
-        <div className="workflow-options">
-          <label className="workflow-option">
-            <input
-              type="radio"
-              name="workflow"
-              value="router"
-              checked={workflow === "router"}
-              onChange={() => onWorkflowChange("router")}
-            />
-            <span>
-              <strong>With router</strong>
-              <span className="workflow-option-note">
-                Classifies intent first, uses few-shot examples. More accurate, more LLM calls.
-              </span>
-            </span>
-          </label>
-
-          <label className="workflow-option">
-            <input
-              type="radio"
-              name="workflow"
-              value="no_router"
-              checked={workflow === "no_router"}
-              onChange={() => onWorkflowChange("no_router")}
-            />
-            <span>
-              <strong>No router (faster)</strong>
-              <span className="workflow-option-note">
-                One combined call classifies and generates SQL together, still using few-shot examples. One fewer LLM call than "with router".
-              </span>
-            </span>
-          </label>
-        </div>
       </div>
 
       <div className="sidebar-section sidebar-section-schema">

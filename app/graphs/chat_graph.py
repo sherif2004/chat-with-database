@@ -12,10 +12,9 @@ from app.guardrails.sql_guard import validate_sql
 from app.models.connection_model import DatabaseConnectionError, get_or_default
 from app.models.history_model import get_recent_history
 from app.models.query_model import execute_sql
-from app.models.workflow_model import get_workflow
 from app.services.cache_service import get_cached_response
 from app.services.example_service import find_similar, remember
-from app.services.llm_service import generate_answer, generate_route_and_sql, generate_sql
+from app.services.llm_service import generate_answer, generate_sql
 from app.services.router_service import classify_intent
 from app.views.chat_view import (
     ChatResponse,
@@ -148,19 +147,6 @@ def resolve_connection_node(state: GraphState, config) -> dict:
     return {}
 
 
-def load_workflow_node(state: GraphState, config) -> dict:
-    """Reads the session's router/no_router preference. Session-id-only
-    lookup — needs neither the resolved connection nor history, so it runs
-    before the two are fanned out in parallel below."""
-
-    _timings, debug, _bg = _deps(config)
-
-    workflow = get_workflow(state["session_id"])
-    debug.workflow = workflow
-
-    return {"workflow": workflow}
-
-
 def load_history_node(state: GraphState, config) -> dict:
     """Independent of `resolve_connection` (both only need session_id), so
     the graph runs them as parallel branches that join before routing."""
@@ -175,8 +161,8 @@ def load_history_node(state: GraphState, config) -> dict:
 
 def route_after_context_node(state: GraphState, config) -> dict:
     """Join point for the resolve_connection / load_history fan-out — no
-    work of its own, just a place for both branches to converge before the
-    router/no_router split."""
+    work of its own, just a place for both branches to converge before
+    classify_intent."""
     return {}
 
 
@@ -217,12 +203,10 @@ def retrieve_examples_node(state: GraphState, config) -> dict:
 
 
 def generate_sql_node(state: GraphState, config) -> dict:
-    """Generates SQL for the question — the router workflow's plain SQL
-    generation, or the no_router workflow's combined route+SQL call.
-
-    Also the retry target: when `sql_error` is set (a previous statement
-    was rejected by the database), that failure is fed back to the model
-    so it can fix its own mistake instead of repeating it.
+    """Generates SQL for the question. Also the retry target: when
+    `sql_error` is set (a previous statement was rejected by the
+    database), that failure is fed back to the model so it can fix its
+    own mistake instead of repeating it.
     """
 
     timings, debug, _bg = _deps(config)
@@ -232,46 +216,21 @@ def generate_sql_node(state: GraphState, config) -> dict:
     if state.get("sql_error"):
         previous_attempt = {"sql": state.get("sql"), "error": state["sql_error"]}
 
-    if state["workflow"] == "router":
-        with timings.step("generate_sql"):
-            generation = generate_sql(
-                state["question"],
-                connection.schema_text,
-                state.get("examples"),
-                state.get("history"),
-                previous_attempt=previous_attempt,
-            )
-        debug.prompts["generate_sql"] = generation.prompt
-        _record_usage(debug, "generate_sql", generation.usage)
-
-        if generation.clarification_question:
-            return _message_state("needs_clarification", generation.clarification_question)
-        if not generation.can_answer:
-            return _message_state("off_topic", generation.cannot_answer_message or CANNOT_ANSWER_MESSAGE)
-
-        return {"sql": generation.sql, "intent": "data_question"}
-
-    with timings.step("route_and_generate_sql"):
-        generation = generate_route_and_sql(
+    with timings.step("generate_sql"):
+        generation = generate_sql(
             state["question"],
             connection.schema_text,
             state.get("examples"),
             state.get("history"),
             previous_attempt=previous_attempt,
         )
-    debug.prompts["route_and_generate_sql"] = generation.prompt
-    _record_usage(debug, "route_and_generate_sql", generation.usage)
+    debug.prompts["generate_sql"] = generation.prompt
+    _record_usage(debug, "generate_sql", generation.usage)
 
-    if generation.intent == "greeting":
-        return _message_state("greeting", generation.reply or GREETING_MESSAGE)
-    if generation.intent == "off_topic":
-        return _message_state("off_topic", generation.reply or OFF_TOPIC_MESSAGE)
-    if generation.intent == "unsafe":
-        return _message_state("unsafe", generation.reply or UNSAFE_MESSAGE)
-    if generation.intent == "cannot_answer":
-        return _message_state("off_topic", generation.reply or CANNOT_ANSWER_MESSAGE)
-    if generation.intent == "needs_clarification":
-        return _message_state("needs_clarification", generation.reply or CANNOT_ANSWER_MESSAGE)
+    if generation.clarification_question:
+        return _message_state("needs_clarification", generation.clarification_question)
+    if not generation.can_answer:
+        return _message_state("off_topic", generation.cannot_answer_message or CANNOT_ANSWER_MESSAGE)
 
     return {"sql": generation.sql, "intent": "data_question"}
 
@@ -356,17 +315,19 @@ def generate_answer_node(state: GraphState, config) -> dict:
 # --- Conditional edges --------------------------------------------------
 
 
-def _route_after_cache(state: GraphState) -> str:
-    return "hit" if state.get("cache_hit") else "miss"
+def _route_after_cache(state: GraphState):
+    """Returns node names directly (no path_map) so a miss can fan out to
+    both resolve_connection and load_history at once."""
+    if state.get("cache_hit"):
+        return END
+    return ["resolve_connection", "load_history"]
 
 
 def _route_after_context(state: GraphState) -> str:
     """After the resolve_connection / load_history join: a connection
     failure short-circuits to END regardless of load_history's outcome
-    (load_history never fails); otherwise branch on workflow."""
-    if state.get("result") is not None:
-        return "error"
-    return state["workflow"]
+    (load_history never fails)."""
+    return "error" if state.get("result") is not None else "ok"
 
 
 def _route_after_execute(state: GraphState) -> str:
@@ -381,7 +342,6 @@ def build_chat_graph():
 
     graph.add_node("input_guard", input_guard_node)
     graph.add_node("cache_lookup", cache_lookup_node)
-    graph.add_node("load_workflow", load_workflow_node)
     graph.add_node("resolve_connection", resolve_connection_node)
     graph.add_node("load_history", load_history_node)
     graph.add_node("route_after_context", route_after_context_node)
@@ -396,20 +356,16 @@ def build_chat_graph():
     graph.set_entry_point("input_guard")
 
     graph.add_conditional_edges("input_guard", _has_result, {"end": END, "next": "cache_lookup"})
-    graph.add_conditional_edges("cache_lookup", _route_after_cache, {"hit": END, "miss": "load_workflow"})
 
-    # resolve_connection and load_history are independent (both need only
-    # session_id) so they run as parallel branches, joining at
-    # route_after_context before the router/no_router split.
-    graph.add_edge("load_workflow", "resolve_connection")
-    graph.add_edge("load_workflow", "load_history")
+    # On a cache miss, resolve_connection and load_history are independent
+    # (both need only session_id), so they run as parallel branches —
+    # _route_after_cache returns both node names directly to fan out.
+    graph.add_conditional_edges("cache_lookup", _route_after_cache)
     graph.add_edge("resolve_connection", "route_after_context")
     graph.add_edge("load_history", "route_after_context")
 
     graph.add_conditional_edges(
-        "route_after_context",
-        _route_after_context,
-        {"error": END, "router": "classify_intent", "no_router": "retrieve_examples"},
+        "route_after_context", _route_after_context, {"error": END, "ok": "classify_intent"}
     )
     graph.add_conditional_edges("classify_intent", _has_result, {"end": END, "next": "retrieve_examples"})
     graph.add_edge("retrieve_examples", "generate_sql")

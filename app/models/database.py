@@ -49,9 +49,8 @@ def run_or_log(operation, logger: logging.Logger, message: str, *args) -> None:
     and return None instead of raising.
 
     Shared by every best-effort read/write in the app's own bookkeeping
-    tables (chat history, saved connections, workflow settings) — a storage
-    hiccup there must degrade gracefully, not break the request that
-    triggered it.
+    tables (chat history, saved connections) — a storage hiccup there must
+    degrade gracefully, not break the request that triggered it.
     """
 
     try:

@@ -52,7 +52,6 @@ class TokenUsage(BaseModel):
 
 class DebugInfo(BaseModel):
     model: str
-    workflow: Literal["router", "no_router"] = "router"
     prompts: dict[str, str] = Field(default_factory=dict)
     token_usage: dict[str, TokenUsage] = Field(default_factory=dict)
     examples: list[ExampleUsed] = Field(default_factory=list)

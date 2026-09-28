@@ -1,11 +1,11 @@
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from openai import AzureOpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
 from app.config import settings
 from app.models.example_model import SimilarExample
-from app.services.prompts import answer_prompt, route_and_sql_prompt, sql_prompt
+from app.services.prompts import answer_prompt, sql_prompt
 from app.views.chat_view import TokenUsage
 
 client = AzureOpenAI(
@@ -16,6 +16,7 @@ client = AzureOpenAI(
 )
 
 MODEL = settings.azure_openai_deployment
+LIGHT_MODEL = settings.azure_openai_deployment_light
 
 # The answer prompt gets at most this many rows; the rest only cost tokens.
 ANSWER_ROW_LIMIT = 20
@@ -39,12 +40,12 @@ def _usage(response) -> TokenUsage | None:
     )
 
 
-def ask_llm(prompt, max_output_tokens=None) -> tuple[str, TokenUsage | None]:
+def ask_llm(prompt, max_output_tokens=None, model=MODEL) -> tuple[str, TokenUsage | None]:
     """Free-text answer."""
 
     try:
         response = client.responses.create(
-            model=MODEL,
+            model=model,
             input=prompt,
             max_output_tokens=max_output_tokens
         )
@@ -55,7 +56,7 @@ def ask_llm(prompt, max_output_tokens=None) -> tuple[str, TokenUsage | None]:
 
 
 def ask_structured(
-    prompt, output_type: type[Output], max_output_tokens=None
+    prompt, output_type: type[Output], max_output_tokens=None, model=MODEL
 ) -> tuple[Output | None, TokenUsage | None]:
     """Answer constrained to `output_type`'s JSON schema. The parsed value
     is None when the model refused or its output could not be parsed;
@@ -63,7 +64,7 @@ def ask_structured(
 
     try:
         response = client.responses.parse(
-            model=MODEL,
+            model=model,
             input=prompt,
             text_format=output_type,
             max_output_tokens=max_output_tokens
@@ -121,7 +122,11 @@ def generate_answer(
     queries: list[dict]
 ) -> tuple[str, str, TokenUsage | None]:
     """`queries` is [{"sql", "rows"}, ...], one entry per executed
-    statement; `rows` is trimmed to ANSWER_ROW_LIMIT here."""
+    statement; `rows` is trimmed to ANSWER_ROW_LIMIT here.
+
+    Summarizing already-fetched rows into a sentence is an easy task
+    compared to writing correct SQL, so this runs on LIGHT_MODEL.
+    """
 
     trimmed = [
         {"sql": q["sql"], "rows": q["rows"][:ANSWER_ROW_LIMIT], "total_rows": len(q["rows"])}
@@ -129,50 +134,6 @@ def generate_answer(
     ]
 
     prompt = answer_prompt(question, trimmed)
-    answer, usage = ask_llm(prompt, max_output_tokens=800)
+    answer, usage = ask_llm(prompt, max_output_tokens=800, model=LIGHT_MODEL)
 
     return answer, prompt, usage
-
-
-class _RouteAndSqlDraft(BaseModel):
-    intent: Literal[
-        "greeting", "off_topic", "unsafe", "data_question",
-        "cannot_answer", "needs_clarification"
-    ]
-    reply: str | None = None
-    sql: str | None = None
-
-
-class RouteAndSqlGeneration(_RouteAndSqlDraft):
-    prompt: str = ""
-    usage: TokenUsage | None = None
-
-
-def generate_route_and_sql(
-    question,
-    schema_text,
-    examples: list[SimilarExample] | None = None,
-    history: list[dict] | None = None,
-    previous_attempt: dict | None = None,
-) -> RouteAndSqlGeneration:
-    """Classify the question and, if it's a data question, generate its SQL,
-    all in a single LLM call. Used by the "no router" workflow: faster
-    (one fewer LLM round trip) than the router + generate_sql sequence,
-    at the cost of folding the unsafe-question judgment into the same
-    prompt as SQL generation instead of a dedicated call.
-
-    `previous_attempt`, when set, is {"sql", "error"} from a prior attempt
-    that failed against the real database.
-    """
-
-    prompt = route_and_sql_prompt(question, schema_text, examples or [], history or [], previous_attempt)
-    draft, usage = ask_structured(prompt, _RouteAndSqlDraft, max_output_tokens=1000)
-
-    # Fail closed: an unusable answer is never sent to SQL.
-    if draft is None:
-        return RouteAndSqlGeneration(intent="off_topic", prompt=prompt, usage=usage)
-
-    if draft.intent == "data_question" and not (draft.sql or "").strip():
-        draft.intent = "cannot_answer"
-
-    return RouteAndSqlGeneration(**draft.model_dump(), prompt=prompt, usage=usage)

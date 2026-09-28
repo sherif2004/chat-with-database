@@ -12,7 +12,6 @@ Step = Literal[
     "router",
     "retrieve_examples",
     "generate_sql",
-    "route_and_generate_sql",
     "sql_guard",
     "execute_sql",
     "generate_answer",
@@ -37,7 +36,6 @@ class StepTimings(BaseModel):
     router: float | None = None
     retrieve_examples: float | None = None
     generate_sql: float | None = None
-    route_and_generate_sql: float | None = None
     sql_guard: float | None = None
     execute_sql: float | None = None
     generate_answer: float | None = None

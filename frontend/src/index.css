@@ -178,41 +178,6 @@ body {
   font-size: 0.8em;
 }
 
-.workflow-options {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.workflow-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.workflow-option input {
-  margin-top: 3px;
-  accent-color: var(--accent);
-  flex-shrink: 0;
-}
-
-.workflow-option span {
-  display: flex;
-  flex-direction: column;
-}
-
-.workflow-option strong {
-  font-size: 0.88em;
-  font-weight: 600;
-}
-
-.workflow-option-note {
-  font-size: 0.78em;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
 .schema-tree {
   display: flex;
   flex-direction: column;

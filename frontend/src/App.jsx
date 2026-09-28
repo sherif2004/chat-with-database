@@ -3,9 +3,7 @@ import {
   connectDatabase,
   getConnectionStatus,
   getHistory,
-  getWorkflow,
   sendMessage,
-  setWorkflow as setWorkflowSetting,
 } from "./api";
 import { getSessionId } from "./session";
 import Message from "./components/Message";
@@ -18,7 +16,6 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [connection, setConnection] = useState(null);
   const [connecting, setConnecting] = useState(false);
-  const [workflow, setWorkflow] = useState("router");
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -41,12 +38,6 @@ export default function App() {
       .then(setConnection)
       .catch(() => {
         // Sidebar just shows "Loading..." until this succeeds on retry.
-      });
-
-    getWorkflow(sessionId)
-      .then((info) => setWorkflow(info.workflow))
-      .catch(() => {
-        // Falls back to the "router" default already in state.
       });
   }, [sessionId]);
 
@@ -94,28 +85,12 @@ export default function App() {
     }
   }
 
-  async function handleWorkflowChange(next) {
-    const previous = workflow;
-    setWorkflow(next);
-
-    try {
-      await setWorkflowSetting(sessionId, next);
-    } catch {
-      // The backend resolves workflow per session from stored state, not
-      // from the chat request itself — if the update didn't take, revert
-      // so the UI doesn't show a choice that isn't actually active.
-      setWorkflow(previous);
-    }
-  }
-
   return (
     <div className="app-shell">
       <Sidebar
         connection={connection}
         connecting={connecting}
         onConnect={handleConnect}
-        workflow={workflow}
-        onWorkflowChange={handleWorkflowChange}
       />
 
       <div className="chat">
