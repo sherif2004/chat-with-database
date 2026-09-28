@@ -53,11 +53,15 @@ class Timings:
 
     @contextmanager
     def step(self, name: Step):
+        """Time one step. If `name` is entered more than once (e.g. a SQL
+        generation step re-run after a retry), the durations accumulate
+        instead of the later call overwriting the earlier one."""
         start = time.perf_counter()
         try:
             yield
         finally:
-            self._steps[name] = round((time.perf_counter() - start) * 1000, 1)
+            elapsed = round((time.perf_counter() - start) * 1000, 1)
+            self._steps[name] = round(self._steps.get(name, 0.0) + elapsed, 1)
 
     def as_model(self) -> StepTimings:
         return StepTimings(

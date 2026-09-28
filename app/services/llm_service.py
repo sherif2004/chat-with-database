@@ -92,10 +92,14 @@ def generate_sql(
     question,
     schema_text,
     examples: list[SimilarExample] | None = None,
-    history: list[dict] | None = None
+    history: list[dict] | None = None,
+    previous_attempt: dict | None = None,
 ) -> SQLGeneration:
+    """`previous_attempt`, when set, is {"sql", "error"} from a prior
+    attempt that failed against the real database — used to retry with
+    the failure fed back to the model."""
 
-    prompt = sql_prompt(question, schema_text, examples or [], history or [])
+    prompt = sql_prompt(question, schema_text, examples or [], history or [], previous_attempt)
     draft, usage = ask_structured(prompt, _SQLDraft, max_output_tokens=1000)
 
     if draft is None or not draft.can_answer or not (draft.sql or "").strip():
@@ -148,16 +152,20 @@ def generate_route_and_sql(
     question,
     schema_text,
     examples: list[SimilarExample] | None = None,
-    history: list[dict] | None = None
+    history: list[dict] | None = None,
+    previous_attempt: dict | None = None,
 ) -> RouteAndSqlGeneration:
     """Classify the question and, if it's a data question, generate its SQL,
     all in a single LLM call. Used by the "no router" workflow: faster
     (one fewer LLM round trip) than the router + generate_sql sequence,
     at the cost of folding the unsafe-question judgment into the same
     prompt as SQL generation instead of a dedicated call.
+
+    `previous_attempt`, when set, is {"sql", "error"} from a prior attempt
+    that failed against the real database.
     """
 
-    prompt = route_and_sql_prompt(question, schema_text, examples or [], history or [])
+    prompt = route_and_sql_prompt(question, schema_text, examples or [], history or [], previous_attempt)
     draft, usage = ask_structured(prompt, _RouteAndSqlDraft, max_output_tokens=1000)
 
     # Fail closed: an unusable answer is never sent to SQL.

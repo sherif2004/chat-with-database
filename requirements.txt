@@ -8,3 +8,6 @@ pydantic
 sqlglot
 pydantic-settings
 qdrant-client
+langgraph
+langgraph-checkpoint-postgres
+psycopg[binary,pool]
