@@ -124,8 +124,11 @@ def generate_answer(
     """`queries` is [{"sql", "rows"}, ...], one entry per executed
     statement; `rows` is trimmed to ANSWER_ROW_LIMIT here.
 
-    Summarizing already-fetched rows into a sentence is an easy task
-    compared to writing correct SQL, so this runs on LIGHT_MODEL.
+    Summarizing rows into a sentence looks easy, but LIGHT_MODEL proved
+    unreliable at the one rule that matters most here — answering in the
+    question's language (verified: ~1 in 3 answers came back in the wrong
+    language, reproducibly, across unrelated questions, even after
+    strengthening the prompt). Runs on MODEL instead.
     """
 
     trimmed = [
@@ -134,6 +137,6 @@ def generate_answer(
     ]
 
     prompt = answer_prompt(question, trimmed)
-    answer, usage = ask_llm(prompt, max_output_tokens=800, model=LIGHT_MODEL)
+    answer, usage = ask_llm(prompt, max_output_tokens=800, model=MODEL)
 
     return answer, prompt, usage

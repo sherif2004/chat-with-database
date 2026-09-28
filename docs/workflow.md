@@ -69,7 +69,7 @@ Code: `app/graphs/chat_graph.py` (nodes), `app/controllers/chat_controller.py`
 | 6 | `generate_sql` | LLM call (`AZURE_OPENAI_DEPLOYMENT`, the capable model) that writes the SQL. Also the **retry target** — see below. | Can't answer / clarification needed → reply, stop |
 | 7 | `validate_sql` | Parses the generated SQL with sqlglot: one or more `SELECT`s only, known tables only, no dangerous functions. | Yes → `unsafe` / can't-answer message (not retried — a guard rejection is a safety issue, not a fixable mistake) |
 | 8 | `execute_sql` | Runs each statement in a read-only transaction with a statement timeout and a row cap (`MAX_ROWS`). | DB rejects it → retry (see below); exhausted → can't-answer message |
-| 9 | `generate_answer` | LLM call (`AZURE_OPENAI_DEPLOYMENT_LIGHT`) that writes a short answer in the question's language from the first 20 rows of each statement. | LLM down → HTTP 503 |
+| 9 | `generate_answer` | LLM call (`AZURE_OPENAI_DEPLOYMENT`, the capable model) that writes a short answer in the question's language from the first 20 rows of each statement. | LLM down → HTTP 503 |
 | 10 | *(controller)* `_finish` | Builds the response; schedules the background tasks below. | — |
 | 11 | Background tasks | Saves the exchange to `chat_history`; caches the response in Redis; if a query returned rows, stores question → SQL in Qdrant as a future few-shot example. | Failures are logged, never shown |
 

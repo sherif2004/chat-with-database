@@ -90,11 +90,14 @@ Use deployment names, not model names. Both chat deployments must support
 structured (JSON schema) output. If an Azure call fails or times out, `/chat`
 returns HTTP 503 with a readable message.
 
-**Hybrid models:** `AZURE_OPENAI_DEPLOYMENT` (the capable model) writes the SQL —
-the one task that genuinely needs strong reasoning (joins, multi-statement
-decisions, schema disambiguation). `AZURE_OPENAI_DEPLOYMENT_LIGHT` (the cheap
-model) handles the two easier tasks: classifying intent and turning query
-results into a sentence. If you don't want this split, set both to the same
+**Hybrid models:** `AZURE_OPENAI_DEPLOYMENT` (the capable model) writes the SQL
+and the final answer — SQL because it needs real reasoning (joins,
+multi-statement decisions, schema disambiguation), and the answer because
+answering-in-the-question's-language turned out to be unreliable on a nano-class
+model even after prompt tuning (verified: ~1 in 3 answers came back in the
+wrong language). `AZURE_OPENAI_DEPLOYMENT_LIGHT` (the cheap model) only handles
+`classify_intent`, a simple 4-way classification it's reliably good at. If you
+don't want this split, set both to the same
 deployment.
 
 ## Answer cache
