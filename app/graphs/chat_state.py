@@ -6,15 +6,13 @@ from app.views.chat_view import ChatResponse, Result
 
 
 class GraphState(TypedDict, total=False):
-    """State threaded through the chat graph for one request — and, with a
-    checkpointer attached (see chat_graph.set_checkpointer), what actually
-    gets persisted to Postgres after every node.
+    """State threaded through the chat graph for one request.
 
     The resolved SessionConnection is deliberately NOT here: it wraps a
-    live SQLAlchemy engine, which isn't serializable and shouldn't be
-    persisted anyway (a resumed turn just re-resolves it, cheaply, from
-    connection_model's cache). It's threaded through `config["configurable"]
-    ["session_data"]` instead — see chat_graph._connection().
+    live SQLAlchemy engine, which doesn't belong alongside plain data (a
+    fresh turn just re-resolves it, cheaply, from connection_model's
+    cache). It's threaded through `config["configurable"]["session_data"]`
+    instead — see chat_graph._connection().
     """
 
     # Request identity

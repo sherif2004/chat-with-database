@@ -16,11 +16,6 @@ class MessageResult(BaseModel):
     message: str
 
 
-class TextResult(BaseModel):
-    type: Literal["text"] = "text"
-    answer: str
-
-
 class QueryTable(BaseModel):
     sql: str
     columns: list[str]
@@ -38,7 +33,7 @@ class TableResult(BaseModel):
 
 
 Result = Annotated[
-    MessageResult | TextResult | TableResult,
+    MessageResult | TableResult,
     Field(discriminator="type")
 ]
 

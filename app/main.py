@@ -4,8 +4,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.graphs.chat_graph import set_checkpointer
-from app.graphs.checkpointer import open_checkpointer
 from app.models.connection_model import ensure_connections_schema, init_default_connection
 from app.models.history_model import ensure_chat_history_schema
 from app.models.workflow_model import ensure_workflow_schema
@@ -35,9 +33,7 @@ async def lifespan(app: FastAPI):
     _ensure_schema(ensure_connections_schema, "Saved connections")
     _ensure_schema(ensure_workflow_schema, "Workflow preference")
 
-    with open_checkpointer() as checkpointer:
-        set_checkpointer(checkpointer)
-        yield
+    yield
 
 
 app = FastAPI(title="Chat With Database", lifespan=lifespan)

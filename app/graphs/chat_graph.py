@@ -11,9 +11,9 @@ from app.guardrails.input_guard import check_question
 from app.guardrails.sql_guard import validate_sql
 from app.models.connection_model import DatabaseConnectionError, get_or_default
 from app.models.history_model import get_recent_history
-from app.services.cache_service import get_cached_response
 from app.models.query_model import execute_sql
 from app.models.workflow_model import get_workflow
+from app.services.cache_service import get_cached_response
 from app.services.example_service import find_similar, remember
 from app.services.llm_service import generate_answer, generate_route_and_sql, generate_sql
 from app.services.router_service import classify_intent
@@ -69,9 +69,8 @@ def _deps(config):
 def _connection(config):
     """The resolved SessionConnection, held in a plain mutable dict on
     `config` rather than in graph state: it wraps a live SQLAlchemy engine,
-    which can't be checkpointed (msgpack has no encoding for it), and
-    doesn't need to be — it's re-resolved (cheaply, from a cache) every
-    turn anyway."""
+    which doesn't belong in state alongside plain data — it's re-resolved
+    (cheaply, from a cache) every turn anyway."""
     return config["configurable"]["session_data"].get("connection")
 
 
@@ -376,13 +375,7 @@ def _route_after_execute(state: GraphState) -> str:
     return "continue"
 
 
-def build_chat_graph(checkpointer=None):
-    """`checkpointer`, when given, makes the graph persist its state after
-    every node — a crash mid-turn can then resume from the last completed
-    step instead of restarting the whole question. Each call site is
-    expected to invoke with a fresh `thread_id` per turn (see
-    chat_controller.py): conversation continuity across turns is handled
-    separately, by chat_history, not by reusing a checkpoint thread."""
+def build_chat_graph():
 
     graph = StateGraph(GraphState)
 
@@ -430,22 +423,7 @@ def build_chat_graph(checkpointer=None):
     graph.add_edge("sql_failed", END)
     graph.add_edge("generate_answer", END)
 
-    return graph.compile(checkpointer=checkpointer)
+    return graph.compile()
 
 
-# Compiled without a checkpointer by default (used by scripts/tests that
-# import this module directly). The running app swaps this for a
-# checkpointed graph at startup — see set_checkpointer() / main.py.
-_compiled_graph = build_chat_graph()
-
-
-def set_checkpointer(checkpointer) -> None:
-    """Rebuild the compiled graph with a checkpointer attached. Called once
-    at app startup after the checkpointer's own connection is ready."""
-
-    global _compiled_graph
-    _compiled_graph = build_chat_graph(checkpointer=checkpointer)
-
-
-def get_chat_graph():
-    return _compiled_graph
+chat_graph = build_chat_graph()

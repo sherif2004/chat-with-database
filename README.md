@@ -4,24 +4,29 @@ Ask questions in natural language about a PostgreSQL database (the demo uses Chi
 
 The step-by-step path a message takes is in [docs/workflow.md](docs/workflow.md).
 
-## Structure (MVC)
+## Structure (MVC + graph)
 
 ```
 app/
   main.py          FastAPI app
   config.py        environment settings
-  models/          data access: app database, chat history + answer cache, saved
-                   connections, workflow setting, schema introspection, SQL
-                   execution, Qdrant example store
+  graphs/          the chat pipeline as a LangGraph StateGraph:
+                   chat_graph.py (nodes/edges, incl. the SQL retry loop),
+                   chat_state.py (graph state shape)
+  models/          data access: app database, chat history (the durable
+                   conversation record), saved connections, workflow
+                   setting, schema introspection, SQL execution, Qdrant
+                   example store
   views/           request/response schemas
-  controllers/     chat flow: question -> SQL -> result -> answer
+  controllers/     invokes the graph, turns the final state into a response
   routes/          FastAPI endpoints (chat, connections, settings)
   services/        Azure OpenAI calls (llm_service), all prompts (prompts.py),
-                   the intent router, embeddings, few-shot example lookup
+                   the intent router, embeddings, few-shot example lookup,
+                   the Redis response cache (cache_service.py)
   guardrails/      input check (prompt injection) and SQL check (read-only)
   timing.py        per-step timings returned with every response
-docs/workflow.md   what happens to a message, step by step
-docker/            docker-compose.yml: runs Qdrant
+docs/workflow.md   what happens to a message, step by step (with the graph diagram)
+docker/            docker-compose.yml: runs Qdrant and Redis
 scripts/deploy.py  loads data/*.csv into the database (needs scripts/requirements.txt)
 ```
 
@@ -29,7 +34,7 @@ scripts/deploy.py  loads data/*.csv into the database (needs scripts/requirement
 
 ```
 cp .env.example .env   # fill in values
-docker compose -f docker/docker-compose.yml up -d   # Qdrant
+docker compose -f docker/docker-compose.yml up -d   # Qdrant + Redis
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
@@ -52,18 +57,20 @@ text-to-SQL schema), and restored on reload.
 
 ## Flow
 
-Full detail, diagram and error table: [docs/workflow.md](docs/workflow.md).
+The pipeline is a LangGraph `StateGraph`, not hand-rolled branching. Full detail,
+diagram and error table: [docs/workflow.md](docs/workflow.md).
 
 1. **Input guard** – length limit and prompt-injection patterns.
-2. **Answer cache** – if the same question (case, punctuation and extra spaces ignored) was already asked in this session, the stored answer is returned straight from `app.chat_history`. No LLM call, no SQL. The response has `cache_hit: true`.
-3. **Connection + history** – picks the session's database and loads the last 3 exchanges so follow-ups work.
+2. **Answer cache (Redis)** – if the same question (case, punctuation and extra spaces ignored) was already asked in this session, the stored answer is returned from Redis. No LLM call, no SQL. The response has `cache_hit: true`. Entries expire after `CACHE_TTL_SECONDS`.
+3. **Connection + history** – picks the session's database and loads the last 3 exchanges (run in parallel, since neither depends on the other) so follow-ups work.
 4. **Router or no-router workflow** (chosen per session in the sidebar) – *with router*: a small LLM call classifies the message (`greeting`, `data_question`, `off_topic`, `unsafe`) and only `data_question` continues. *No router*: one combined call classifies and writes the SQL, one fewer round trip.
 5. **Dynamic few-shot** – the question is embedded, and stored question→SQL pairs that are similar enough (found in Qdrant) are added to the SQL prompt.
 6. **SQL guard** – parses the generated SQL (sqlglot): one `SELECT` only, known tables only, no `pg_*`/`dblink`/`set_config`-style functions.
-7. **Read-only execution** – runs in a read-only transaction with a statement timeout and a row cap, so writes fail even if a query slipped through.
-8. **Answer + learn** – the LLM writes a short answer from the first 20 rows. After the response is sent, the exchange is saved to `chat_history`, and a query that passed the guard and returned rows is saved as a few-shot example, so the store grows from real usage without slowing the answer.
+7. **Read-only execution, with retry** – runs in a read-only transaction with a statement timeout and a row cap. If Postgres itself rejects the query (bad column, syntax slip the guard let through, ...), the error is fed back to the model and it gets up to 3 attempts total before falling back to a "can't answer" message — no more HTTP 500s on a bad query.
+8. **Answer + learn** – the LLM writes a short answer from the first 20 rows. After the response is sent, in the background: the exchange is saved to `chat_history`, the response is cached in Redis, and a query that passed the guard and returned rows is saved as a few-shot example.
 
-Response `result` is one of `{"type": "message"}`, `{"type": "text"}` or `{"type": "table", "columns": [...], "rows": [...], "answer": "..."}`.
+Response `result` is one of `{"type": "message", "message": "..."}` or
+`{"type": "table", "queries": [{"sql", "columns", "rows", "truncated"}, ...], "answer": "..."}`.
 
 Limits are set with `MAX_QUESTION_LENGTH`, `MAX_ROWS` and `STATEMENT_TIMEOUT_MS`.
 
@@ -83,7 +90,21 @@ Use deployment names, not model names. The chat deployment must support structur
 
 ## Answer cache
 
-Repeated questions are answered from `app.chat_history` (Postgres, so it survives restarts) instead of calling the model. It is per session, matches on the normalized question (word matching, not semantic), and returns the earlier answer without re-running the SQL, so numbers are as of the first time it was asked.
+Repeated questions are answered from Redis instead of calling the model. It is per
+session, matches on the normalized question (word matching, not semantic), expires
+after `CACHE_TTL_SECONDS` (default 3600s), and returns the earlier answer without
+re-running the SQL, so numbers are as of when it was cached. `app.chat_history`
+(Postgres) is the separate, durable conversation record — it never expires and
+isn't the cache.
+
+Run Redis locally with Docker:
+
+```
+docker compose -f docker/docker-compose.yml up -d
+```
+
+Or point `REDIS_URL` at any Redis instance. If Redis is unreachable, the app logs a
+warning and every lookup is a miss — it never blocks a response.
 
 ## Few-shot examples
 

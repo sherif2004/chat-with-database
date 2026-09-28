@@ -1,10 +1,9 @@
 import logging
-import uuid
 
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
 
-from app.graphs.chat_graph import get_chat_graph
+from app.graphs.chat_graph import chat_graph
 from app.models.history_model import get_history, save_message
 from app.services.cache_service import set_cached_response
 from app.services.llm_service import MODEL
@@ -44,11 +43,7 @@ def chat_with_database(
     session_id = request.session_id
     debug = DebugInfo(model=MODEL)
 
-    # A fresh thread_id per turn, not per session: conversation continuity
-    # across turns is already handled by chat_history (see _recent_history
-    # in chat_graph.py), not by reusing a checkpoint thread. This thread_id
-    # only lets a crash mid-turn resume that one turn's graph run.
-    final_state = get_chat_graph().invoke(
+    final_state = chat_graph.invoke(
         {"session_id": session_id, "raw_question": request.question},
         config={
             "configurable": {
@@ -56,7 +51,6 @@ def chat_with_database(
                 "debug": debug,
                 "background_tasks": background_tasks,
                 "session_data": {},
-                "thread_id": str(uuid.uuid4()),
             }
         },
     )
