@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.models.connection_model import ensure_connections_schema, init_default_connection
 from app.models.history_model import ensure_chat_history_schema
 from app.models.user_model import ensure_users_schema
-from app.routes import auth_route, chat_route, connection_route
+from app.routes import auth_route, chat_route, connection_route, conversation_route
 from app.config import settings
 from app.services import example_service
 
@@ -69,3 +69,4 @@ app.add_middleware(
 app.include_router(auth_route.router)
 app.include_router(chat_route.router)
 app.include_router(connection_route.router)
+app.include_router(conversation_route.router)

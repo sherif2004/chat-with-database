@@ -50,12 +50,104 @@ export function logOut() {
   return request("/auth/logout", { method: "POST" }, "Log out failed");
 }
 
-export function getHistory() {
-  return request("/chat/history", undefined, "Failed to load history");
+export function getConversations() {
+  return request("/conversations", undefined, "Failed to load conversations");
 }
 
-export function sendMessage(question) {
-  return postJson("/chat", { question }, "Chat request failed");
+export function getMessages(conversationId) {
+  return request(
+    `/conversations/${conversationId}/messages`,
+    undefined,
+    "Failed to load conversation"
+  );
+}
+
+export function renameConversation(conversationId, title) {
+  return request(
+    `/conversations/${conversationId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    },
+    "Rename failed"
+  );
+}
+
+export function deleteConversation(conversationId) {
+  return request(
+    `/conversations/${conversationId}`,
+    { method: "DELETE" },
+    "Delete failed"
+  );
+}
+
+export function getFollowups(conversationId) {
+  return request(
+    `/conversations/${conversationId}/followups`,
+    undefined,
+    "Failed to load suggestions"
+  );
+}
+
+export function getStarters() {
+  return request("/connections/starters", undefined, "Failed to load suggestions");
+}
+
+/**
+ * Sends a question and reports pipeline stages as they start.
+ * Resolves with the final chat response; rejects on failure, or with an
+ * AbortError when `signal` is aborted.
+ */
+export async function streamChat(
+  question,
+  { conversationId, replaceLast = false, signal, onStage }
+) {
+  const response = await fetch(`${API_BASE}/chat/stream`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question,
+      conversation_id: conversationId ?? undefined,
+      replace_last: replaceLast,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const message = body?.detail || `Chat request failed: ${response.status}`;
+    throw response.status === 401 ? new AuthError(message) : new Error(message);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop();
+
+    for (const raw of events) {
+      const name = /^event: (.+)$/m.exec(raw)?.[1];
+      const data = /^data: (.+)$/m.exec(raw)?.[1];
+      if (!name || !data) continue;
+
+      const payload = JSON.parse(data);
+      if (name === "stage") onStage?.(payload.step);
+      else if (name === "done") result = payload;
+      else if (name === "error") throw new Error(payload.detail);
+    }
+  }
+
+  if (!result) throw new Error("The connection closed before an answer arrived.");
+  return result;
 }
 
 export function getConnectionStatus() {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import SchemaTree from "./SchemaTree";
 
-export default function Sidebar({ user, onSignOut, connection, connecting, onConnect }) {
+export default function DatabasePanel({ connection, connecting, onConnect }) {
   const [formOpen, setFormOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
@@ -28,7 +28,7 @@ export default function Sidebar({ user, onSignOut, connection, connecting, onCon
   return (
     <aside className="sidebar">
       <div className="sidebar-section">
-        <div className="sidebar-heading">Database</div>
+        <div className="sidebar-heading">Connected database</div>
 
         <div className="connection-status">
           <span
@@ -95,15 +95,6 @@ export default function Sidebar({ user, onSignOut, connection, connecting, onCon
         ) : (
           <div className="schema-empty">Loading schema...</div>
         )}
-      </div>
-
-      <div className="sidebar-account">
-        <span className="sidebar-account-email" title={user.email}>
-          {user.email}
-        </span>
-        <button type="button" className="sidebar-link-button" onClick={onSignOut}>
-          Sign out
-        </button>
       </div>
     </aside>
   );

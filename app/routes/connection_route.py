@@ -11,6 +11,8 @@ from app.models.connection_model import (
     get_default_connection,
     get_or_default,
 )
+from app.services.suggestion_service import FALLBACK_STARTERS, starter_questions
+from app.views.conversation_view import Suggestions
 from app.views.connection_view import ConnectionInfo, ConnectRequest
 
 logger = logging.getLogger(__name__)
@@ -51,3 +53,15 @@ def current_connection(user: User = Depends(current_user)):
     except DatabaseConnectionError as e:
         logger.warning("Saved connection unreachable for session %s: %s", session_id, e)
         return _to_connection_info(get_default_connection(), error=str(e))
+
+
+@router.get("/connections/starters", response_model=Suggestions)
+def starters(user: User = Depends(current_user)):
+    """Starter questions for the empty chat, written for the connected schema."""
+
+    try:
+        schema_text = get_or_default(owner_key(user)).schema_text
+    except DatabaseConnectionError:
+        return Suggestions(suggestions=FALLBACK_STARTERS)
+
+    return Suggestions(suggestions=starter_questions(schema_text))

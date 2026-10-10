@@ -1,8 +1,17 @@
 import { memo, useId, useState } from "react";
+import Icon from "./Icon";
 import MessageDetails, { formatMs } from "./MessageDetails";
+import ResultTable from "./ResultTable";
 
-function Message({ role, question, response, error }) {
+function answerText(response) {
+  const result = response.result;
+  if (result.type === "message") return result.message;
+  return result.answer || "";
+}
+
+function Message({ role, question, response, error, isLast, onRegenerate, onEdit }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const detailsId = useId();
 
   if (role === "user") {
@@ -29,57 +38,59 @@ function Message({ role, question, response, error }) {
   const totalMs = response.timings_ms?.total;
   const hasDetails = Boolean(response.timings_ms || response.debug);
 
+  async function copyAnswer() {
+    try {
+      await navigator.clipboard.writeText(answerText(response));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard blocked; nothing to do.
+    }
+  }
+
   return (
     <div className="message message-assistant">
       <div className="message-assistant-column">
         <div className="bubble">
           {result.type === "table" ? (
             <>
-              {result.answer && (
-                <p dir="auto">{result.answer}</p>
-              )}
+              {result.answer && <p dir="auto">{result.answer}</p>}
               {result.queries.map((query, queryIndex) => (
-                <div key={queryIndex}>
-                  {result.queries.length > 1 && (
-                    <p className="query-label">Query {queryIndex + 1} of {result.queries.length}</p>
-                  )}
-                  <div className="table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          {query.columns.map((column) => (
-                            <th key={column} dir="auto">
-                              {column}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {query.rows.map((row, rowIndex) => (
-                          <tr key={rowIndex}>
-                            {row.map((cell, cellIndex) => (
-                              <td key={cellIndex} dir="auto">
-                                {cell == null ? "—" : String(cell)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {query.truncated && <p className="truncated-note">Results truncated.</p>}
-                </div>
+                <ResultTable
+                  key={queryIndex}
+                  query={query}
+                  label={
+                    result.queries.length > 1
+                      ? `Query ${queryIndex + 1} of ${result.queries.length}`
+                      : null
+                  }
+                />
               ))}
             </>
           ) : (
-            <p dir="auto">{result.type === "message" ? result.message : result.answer}</p>
+            <p dir="auto">{result.message}</p>
           )}
         </div>
 
-        {hasDetails && (
-          <div className="message-meta">
-            {response.cache_hit && <span className="message-cache-badge">Cached</span>}
-            {totalMs != null && <span className="message-latency">{formatMs(totalMs)}</span>}
+        <div className="message-meta">
+          {response.cache_hit && <span className="message-cache-badge">Cached</span>}
+          {totalMs != null && <span className="message-latency">{formatMs(totalMs)}</span>}
+          <button type="button" className="text-button" onClick={copyAnswer}>
+            {copied ? "Copied" : "Copy answer"}
+          </button>
+          {isLast && (
+            <>
+              <button type="button" className="text-button" onClick={onRegenerate}>
+                <Icon name="refresh" size={14} />
+                Regenerate
+              </button>
+              <button type="button" className="text-button" onClick={onEdit}>
+                <Icon name="pencil" size={14} />
+                Edit question
+              </button>
+            </>
+          )}
+          {hasDetails && (
             <button
               type="button"
               className="message-details-toggle"
@@ -89,8 +100,8 @@ function Message({ role, question, response, error }) {
             >
               {detailsOpen ? "Hide details" : "Details"}
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         <div id={detailsId}>
           {detailsOpen && <MessageDetails response={response} />}

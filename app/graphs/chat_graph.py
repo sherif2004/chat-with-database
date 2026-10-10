@@ -73,7 +73,9 @@ def _connection(config):
     return config["configurable"]["session_data"].get("connection")
 
 
-def _recent_history(session_id: str, limit: int = RECENT_HISTORY_LIMIT) -> list[dict]:
+def _recent_history(
+    session_id: str, conversation_id: int | None, limit: int = RECENT_HISTORY_LIMIT
+) -> list[dict]:
     """Last few exchanges, oldest first, as {"question", "answer", "sql"}.
 
     `sql` (when the turn was a data question) is what actually lets a
@@ -82,7 +84,7 @@ def _recent_history(session_id: str, limit: int = RECENT_HISTORY_LIMIT) -> list[
     its result — the same reason few-shot examples carry SQL, not prose.
     """
 
-    rows = get_recent_history(session_id, limit)
+    rows = get_recent_history(session_id, conversation_id, limit)
 
     turns = []
 
@@ -117,6 +119,9 @@ def input_guard_node(state: GraphState, config) -> dict:
 def cache_lookup_node(state: GraphState, config) -> dict:
 
     timings, _debug, _bg = _deps(config)
+
+    if state.get("skip_cache"):
+        return {"cache_hit": False}
 
     with timings.step("cache_lookup"):
         cached = get_cached_response(state["session_id"], state["question"])
@@ -154,7 +159,7 @@ def load_history_node(state: GraphState, config) -> dict:
     timings, _debug, _bg = _deps(config)
 
     with timings.step("load_history"):
-        history = _recent_history(state["session_id"])
+        history = _recent_history(state["session_id"], state.get("conversation_id"))
 
     return {"history": history}
 

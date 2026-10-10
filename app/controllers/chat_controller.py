@@ -4,7 +4,13 @@ from fastapi import BackgroundTasks
 from pydantic import ValidationError
 
 from app.graphs.chat_graph import chat_graph
-from app.models.history_model import get_history, save_message
+from app.models.conversation_model import (
+    create_conversation,
+    get_conversation,
+    rename_conversation,
+    title_from_question,
+)
+from app.models.history_model import delete_last_exchange, get_history, save_message
 from app.services.cache_service import set_cached_response
 from app.services.llm_service import MODEL
 from app.timing import Timings
@@ -13,9 +19,15 @@ from app.views.chat_view import ChatRequest, ChatResponse, DebugInfo, HistoryEnt
 logger = logging.getLogger(__name__)
 
 
-def _finish(timings, background_tasks, session_id, debug, **fields):
+class ConversationNotFound(Exception):
+    pass
 
-    response = ChatResponse(timings_ms=timings.as_model(), debug=debug, **fields)
+
+def _finish(timings, background_tasks, session_id, conversation_id, debug, **fields):
+
+    response = ChatResponse(
+        timings_ms=timings.as_model(), debug=debug, conversation_id=conversation_id, **fields
+    )
 
     logger.info(
         "intent=%s timings_ms=%s",
@@ -24,7 +36,7 @@ def _finish(timings, background_tasks, session_id, debug, **fields):
     )
 
     dumped = response.model_dump(mode="json")
-    background_tasks.add_task(save_message, session_id, fields["question"], dumped)
+    background_tasks.add_task(save_message, session_id, conversation_id, fields["question"], dumped)
 
     # Cache hits aren't re-cached — the entry that served this one is
     # already there and still fresh.
@@ -38,15 +50,35 @@ def chat_with_database(
     request: ChatRequest,
     background_tasks: BackgroundTasks,
     session_id: str,
+    timings: Timings | None = None,
 ) -> ChatResponse:
     """`session_id` is the signed-in user's owner key (see dependencies.owner_key): the key under
     which history, the saved connection and cached answers are stored."""
 
-    timings = Timings()
+    timings = timings or Timings()
     debug = DebugInfo(model=MODEL)
 
+    if request.conversation_id is None:
+        conversation_id = create_conversation(
+            session_id, title_from_question(request.question)
+        ).id
+    else:
+        conversation = get_conversation(session_id, request.conversation_id)
+        if conversation is None:
+            raise ConversationNotFound()
+        conversation_id = conversation.id
+        if conversation.title == "New chat":
+            rename_conversation(session_id, conversation_id, title_from_question(request.question))
+        if request.replace_last:
+            delete_last_exchange(session_id, conversation_id)
+
     final_state = chat_graph.invoke(
-        {"session_id": session_id, "raw_question": request.question},
+        {
+            "session_id": session_id,
+            "conversation_id": conversation_id,
+            "skip_cache": request.replace_last,
+            "raw_question": request.question,
+        },
         config={
             "configurable": {
                 "timings": timings,
@@ -63,6 +95,7 @@ def chat_with_database(
             timings,
             background_tasks,
             session_id,
+            conversation_id,
             cached.debug,
             intent=cached.intent,
             question=final_state["question"],
@@ -75,6 +108,7 @@ def chat_with_database(
         timings,
         background_tasks,
         session_id,
+        conversation_id,
         debug,
         intent=final_state["intent"],
         question=final_state["question"],
@@ -83,9 +117,12 @@ def chat_with_database(
     )
 
 
-def get_chat_history(session_id: str) -> list[HistoryEntry]:
+def get_chat_history(session_id: str, conversation_id: int) -> list[HistoryEntry]:
 
-    rows = get_history(session_id)
+    if get_conversation(session_id, conversation_id) is None:
+        raise ConversationNotFound()
+
+    rows = get_history(session_id, conversation_id)
 
     entries = []
 

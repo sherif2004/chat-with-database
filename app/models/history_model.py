@@ -42,6 +42,21 @@ def ensure_chat_history_schema() -> None:
         CREATE INDEX IF NOT EXISTS chat_history_session_id_created_at_idx
         ON app.chat_history (session_id, created_at)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS app.conversations (
+            id BIGSERIAL PRIMARY KEY,
+            owner TEXT NOT NULL,
+            title TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS conversations_owner_updated_idx ON app.conversations (owner, updated_at DESC)",
+        "ALTER TABLE app.chat_history ADD COLUMN IF NOT EXISTS conversation_id BIGINT",
+        """
+        CREATE INDEX IF NOT EXISTS chat_history_conversation_idx
+        ON app.chat_history (conversation_id, created_at)
+        """,
         # question_key backed the exact-match response cache, now moved to
         # Redis (see app/services/cache_service.py) — drop the leftover
         # column/index so chat_history is purely the conversation record.
@@ -50,7 +65,7 @@ def ensure_chat_history_schema() -> None:
     )
 
 
-def save_message(session_id: str, question: str, response: dict) -> None:
+def save_message(session_id: str, conversation_id: int, question: str, response: dict) -> None:
     """Persist one exchange. Never raises: a storage problem must not
     break the chat response, which has already been sent by the time
     this runs as a background task."""
@@ -59,20 +74,25 @@ def save_message(session_id: str, question: str, response: dict) -> None:
         with app_engine.begin() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO app.chat_history (session_id, question, response)
-                    VALUES (:session_id, :question, CAST(:response AS JSONB))
+                    INSERT INTO app.chat_history (session_id, conversation_id, question, response)
+                    VALUES (:session_id, :conversation_id, :question, CAST(:response AS JSONB))
                 """),
                 {
                     "session_id": session_id,
+                    "conversation_id": conversation_id,
                     "question": question,
                     "response": json.dumps(response),
                 }
+            )
+            conn.execute(
+                text("UPDATE app.conversations SET updated_at = now() WHERE id = :id AND owner = :owner"),
+                {"id": conversation_id, "owner": session_id},
             )
 
     run_or_log(run, logger, "Could not save chat history: %s")
 
 
-def get_history(session_id: str) -> list[HistoryRow]:
+def get_history(session_id: str, conversation_id: int) -> list[HistoryRow]:
 
     def run():
         with app_engine.connect() as conn:
@@ -80,17 +100,17 @@ def get_history(session_id: str) -> list[HistoryRow]:
                 text("""
                     SELECT question, response, created_at
                     FROM app.chat_history
-                    WHERE session_id = :session_id
+                    WHERE session_id = :session_id AND conversation_id = :conversation_id
                     ORDER BY created_at ASC
                 """),
-                {"session_id": session_id}
+                {"session_id": session_id, "conversation_id": conversation_id}
             )
             return [_to_history_row(row) for row in result]
 
     return retry_on_disconnect(run)
 
 
-def get_recent_history(session_id: str, limit: int) -> list[HistoryRow]:
+def get_recent_history(session_id: str, conversation_id: int | None, limit: int) -> list[HistoryRow]:
     """Last `limit` exchanges, oldest first. Unlike get_history(), this
     fetches only `limit` rows from the database instead of the whole
     session — used to feed a prompt, where the cost must not grow with
@@ -102,12 +122,34 @@ def get_recent_history(session_id: str, limit: int) -> list[HistoryRow]:
                 text("""
                     SELECT question, response, created_at
                     FROM app.chat_history
-                    WHERE session_id = :session_id
+                    WHERE session_id = :session_id AND conversation_id = :conversation_id
                     ORDER BY created_at DESC
                     LIMIT :limit
                 """),
-                {"session_id": session_id, "limit": limit}
+                {"session_id": session_id, "conversation_id": conversation_id, "limit": limit}
             )
             return list(reversed([_to_history_row(row) for row in result]))
 
     return retry_on_disconnect(run)
+
+
+def delete_last_exchange(session_id: str, conversation_id: int) -> None:
+    """Drop the newest exchange of a conversation — used when the user
+    regenerates an answer or edits their last question."""
+
+    def run():
+        with app_engine.begin() as conn:
+            conn.execute(
+                text("""
+                    DELETE FROM app.chat_history
+                    WHERE id = (
+                        SELECT id FROM app.chat_history
+                        WHERE session_id = :session_id AND conversation_id = :conversation_id
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 1
+                    )
+                """),
+                {"session_id": session_id, "conversation_id": conversation_id},
+            )
+
+    retry_on_disconnect(run)

@@ -45,7 +45,10 @@ class StepTimings(BaseModel):
 class Timings:
     """Collects how long each step of a request takes."""
 
-    def __init__(self):
+    def __init__(self, on_step=None):
+        """`on_step(name)`, when given, is called as each step starts —
+        the streaming endpoint uses it to report progress."""
+        self._on_step = on_step
         self._start = time.perf_counter()
         self._steps: dict[str, float] = {}
 
@@ -54,6 +57,8 @@ class Timings:
         """Time one step. If `name` is entered more than once (e.g. a SQL
         generation step re-run after a retry), the durations accumulate
         instead of the later call overwriting the earlier one."""
+        if self._on_step is not None:
+            self._on_step(name)
         start = time.perf_counter()
         try:
             yield

@@ -65,6 +65,12 @@ Sign-up and login are built in and stored in the same Postgres database, in the 
 
 Endpoints: `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`.
 
+## Conversations
+
+Each user has many conversations (`app.conversations`); history, follow-up context and regenerate/edit all work per conversation. Endpoints: `GET/POST /conversations`, `PATCH/DELETE /conversations/{id}`, `GET /conversations/{id}/messages`, `GET /conversations/{id}/followups`, `GET /connections/starters`.
+
+`POST /chat/stream` is `POST /chat` with progress: it sends server-sent `stage` events as each pipeline step starts, then one `done` (the same payload as `/chat`) or `error`. Send `replace_last: true` to regenerate or edit the newest exchange (it also skips the answer cache).
+
 ## Flow
 
 The pipeline is a LangGraph `StateGraph`, not hand-rolled branching. Full detail,

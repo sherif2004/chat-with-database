@@ -8,6 +8,9 @@ from app.timing import StepTimings
 
 class ChatRequest(BaseModel):
     question: str
+    conversation_id: int | None = None
+    # Regenerate / edit-last: drop the newest exchange first and skip the answer cache.
+    replace_last: bool = False
 
 
 class MessageResult(BaseModel):
@@ -67,6 +70,7 @@ class ChatResponse(BaseModel):
     timings_ms: StepTimings = StepTimings()
     debug: DebugInfo | None = None
     cache_hit: bool = False
+    conversation_id: int | None = None
 
 
 class HistoryEntry(BaseModel):

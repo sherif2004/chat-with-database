@@ -17,6 +17,8 @@ class GraphState(TypedDict, total=False):
 
     # Request identity
     session_id: str
+    conversation_id: int | None
+    skip_cache: bool
     raw_question: str
     question: str
 
