@@ -1843,19 +1843,191 @@ th.cell-number .sort-button {
   }
 }
 
-/* ---- Theme toggle ---- */
+/* ---- Appearance menu: theme and main color ---- */
 
-.theme-toggle {
+.appearance {
+  position: relative;
   flex-shrink: 0;
 }
 
-.auth .theme-toggle,
-.auth-theme {
+.auth-appearance {
   position: fixed;
   top: 12px;
   right: 12px;
 }
 
+.appearance-panel {
+  position: absolute;
+  right: 0;
+  z-index: 40;
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  animation: reveal 0.2s var(--ease-out) both;
+}
+
+/* In the rail the panel anchors to the whole footer, not the small icon,
+   so it stays inside the rail's width. */
+.rail .sidebar-account {
+  position: relative;
+}
+
+.rail .appearance {
+  position: static;
+}
+
+.appearance-up {
+  bottom: calc(100% + 8px);
+  left: 12px;
+  right: auto;
+}
+
+.appearance-down {
+  top: calc(100% + 8px);
+}
+
+.appearance-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.appearance-heading {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 0.75em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.appearance-value {
+  margin-left: 8px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+
+.segmented {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+
+.segment {
+  flex: 1;
+  position: relative;
+}
+
+.segment input,
+.swatch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.segment span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.segment input:checked + span {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.segment input:focus-visible + span {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.swatch {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.swatch-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--border);
+  transition: transform 0.15s var(--ease-out);
+}
+
+.swatch:hover .swatch-dot {
+  transform: scale(1.1);
+}
+
+.swatch-page {
+  border: 1px solid transparent;
+  color: var(--text);
+}
+
+.swatch-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+}
+
+.swatch input:checked + .swatch-dot {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text);
+}
+
+.swatch input:focus-visible + .swatch-dot {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+}
+
 .rail .sidebar-account {
   gap: 4px;
+}
+
+@media (pointer: coarse) {
+  .swatch-dot {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appearance-panel,
+  .swatch-dot {
+    animation: none;
+    transition: none;
+  }
 }

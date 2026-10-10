@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
-import ThemeToggle from "./ThemeToggle";
+import AppearanceMenu from "./AppearanceMenu";
 
 const GROUPS = ["Today", "Yesterday", "Previous 7 days", "Earlier"];
 
@@ -204,7 +204,7 @@ function Rail({
           <span className="sidebar-account-email" title={user.email}>
             {user.email}
           </span>
-          <ThemeToggle />
+          <AppearanceMenu />
           <button type="button" className="sidebar-link-button" onClick={onSignOut}>
             Sign out
           </button>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { logIn, signUp } from "../api";
-import ThemeToggle from "./ThemeToggle";
+import AppearanceMenu from "./AppearanceMenu";
 
 const MODES = {
   login: {
@@ -59,7 +59,9 @@ export default function AuthScreen({ onAuthenticated }) {
 
   return (
     <main className="auth">
-      <ThemeToggle className="auth-theme" />
+      <div className="auth-appearance">
+        <AppearanceMenu placement="down" />
+      </div>
       <form className="auth-card" onSubmit={handleSubmit}>
         <h1 className="auth-title">{copy.title}</h1>
         <p className="auth-subtitle">{copy.subtitle}</p>

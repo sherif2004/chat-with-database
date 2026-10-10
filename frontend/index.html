@@ -4,10 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Apply a saved theme before first paint so there is no light flash in dark mode.
+      // Apply the saved theme and main color before first paint so nothing flashes.
       try {
         var t = localStorage.getItem("theme");
         if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+        var a = localStorage.getItem("theme-css") || localStorage.getItem("accent-css");
+        if (a) document.documentElement.style.cssText = a;
       } catch (e) {}
     </script>
     <title>Askbase</title>
