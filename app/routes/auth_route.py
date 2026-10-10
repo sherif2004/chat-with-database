@@ -18,7 +18,11 @@ from app.services.auth_service import (
     MIN_PASSWORD_LENGTH,
     hash_password,
     is_valid_email,
-    login_throttle,
+    LOGIN_WINDOW,
+    SIGNUP_LIMIT_PER_IP,
+    SIGNUP_WINDOW,
+    limiter,
+    login_keys,
     new_session_token,
     normalize_email,
     verify_password,
@@ -47,13 +51,22 @@ def _start_session(response: Response, user: User) -> None:
     )
 
 
-def _throttle_key(request: Request, email: str) -> str:
-    client = request.client.host if request.client else "unknown"
-    return f"{client}:{email}"
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
 
 
 @router.post("/signup", response_model=UserInfo, status_code=201)
-def signup(credentials: Credentials, response: Response):
+def signup(credentials: Credentials, request: Request, response: Response):
+
+    signup_key = f"signup:ip:{_client_ip(request)}"
+
+    if limiter.count(signup_key) >= SIGNUP_LIMIT_PER_IP:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many sign-ups from this network. Try again later.",
+        )
+
+    limiter.record(signup_key, SIGNUP_WINDOW)
 
     email = normalize_email(credentials.email)
 
@@ -82,9 +95,9 @@ def signup(credentials: Credentials, response: Response):
 def login(credentials: Credentials, request: Request, response: Response):
 
     email = normalize_email(credentials.email)
-    key = _throttle_key(request, email)
+    keys = login_keys(_client_ip(request), email)
 
-    if login_throttle.blocked(key):
+    if any(limiter.count(key) >= limit for key, limit in keys.items()):
         raise HTTPException(
             status_code=429,
             detail="Too many attempts. Wait a few minutes and try again.",
@@ -100,10 +113,12 @@ def login(credentials: Credentials, request: Request, response: Response):
     password_ok = verify_password(credentials.password, stored_hash)
 
     if not found or not password_ok:
-        login_throttle.record_failure(key)
+        for key in keys:
+            limiter.record(key, LOGIN_WINDOW)
         raise HTTPException(status_code=401, detail=_BAD_LOGIN)
 
-    login_throttle.clear(key)
+    for key in list(keys)[:1]:  # a good login clears only this client's own counter
+        limiter.clear(key)
     user = found[0]
 
     try:

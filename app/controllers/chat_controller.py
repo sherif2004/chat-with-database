@@ -39,7 +39,7 @@ def chat_with_database(
     background_tasks: BackgroundTasks,
     session_id: str,
 ) -> ChatResponse:
-    """`session_id` is the signed-in user's id as a string: the key under
+    """`session_id` is the signed-in user's owner key (see dependencies.owner_key): the key under
     which history, the saved connection and cached answers are stored."""
 
     timings = Timings()

@@ -1,7 +1,8 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.models.connection_model import ensure_connections_schema, init_default_connection
@@ -39,9 +40,27 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Chat With Database", lifespan=lifespan)
 
+_ALLOWED_ORIGINS = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+
+
+@app.middleware("http")
+async def reject_cross_site_writes(request: Request, call_next):
+    """Cookie sessions make state-changing requests forgeable from another
+    site. Browsers always send Origin on those, so refuse any that is not ours.
+    Requests without an Origin (curl, server-to-server) carry no browser
+    cookies to abuse and pass."""
+
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in _ALLOWED_ORIGINS:
+            return JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
+
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

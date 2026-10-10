@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.controllers import chat_controller
-from app.dependencies import current_user
+from app.dependencies import current_user, owner_key
 from app.models.user_model import User
 from app.services.llm_service import LLMUnavailable
 from app.views.chat_view import ChatRequest, ChatResponse, HistoryEntry
@@ -22,7 +22,7 @@ def chat(
 ):
 
     try:
-        return chat_controller.chat_with_database(request, background_tasks, str(user.id))
+        return chat_controller.chat_with_database(request, background_tasks, owner_key(user))
 
     except SQLAlchemyError:
         logger.exception("SQL execution error")
@@ -40,7 +40,7 @@ def chat(
 def chat_history(user: User = Depends(current_user)):
 
     try:
-        return chat_controller.get_chat_history(str(user.id))
+        return chat_controller.get_chat_history(owner_key(user))
 
     except SQLAlchemyError:
         logger.exception("Chat history read error")

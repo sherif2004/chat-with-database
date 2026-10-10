@@ -16,3 +16,11 @@ def current_user(session: str | None = Cookie(default=None, alias=SESSION_COOKIE
         raise HTTPException(status_code=401, detail="Please sign in to continue.")
 
     return user
+
+
+def owner_key(user: User) -> str:
+    """The key under which a user's history, saved connection and cached
+    answers are stored. Prefixed so it can never match a row written before
+    accounts existed, when clients chose their own session_id."""
+
+    return f"u:{user.id}"
