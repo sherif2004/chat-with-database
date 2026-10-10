@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-10T00:00:00Z",
+  "title": "Design System: Chat With Database",
+  "extensions": {
+    "colorMeta": {
+      "messenger-blue": {
+        "role": "primary",
+        "displayName": "Messenger Blue (brand: rings, borders, tints)",
+        "canonical": "#0a84ff",
+        "tonalRamp": [
+          "#00234d",
+          "#004499",
+          "#0066cc",
+          "#0a84ff",
+          "#4da3ff",
+          "#85c1ff",
+          "#bddcff",
+          "#e6f2ff"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "#f5f5f7",
+        "tonalRamp": [
+          "#16171a",
+          "#1e1f23",
+          "#232428",
+          "#6b7280",
+          "#d0d2d8",
+          "#e3e4e8",
+          "#f0f1f4",
+          "#f5f5f7"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#1e1f23",
+          "#232428",
+          "#302f34",
+          "#6b7280",
+          "#d0d2d8",
+          "#e3e4e8",
+          "#f7f8fa",
+          "#ffffff"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1c1e21",
+        "tonalRamp": [
+          "#1c1e21",
+          "#2a2b30",
+          "#3a3b40",
+          "#6b7280",
+          "#9799a1",
+          "#d0d2d8",
+          "#e3e4e8",
+          "#eceef1"
+        ]
+      },
+      "error-ink": {
+        "role": "semantic",
+        "displayName": "Error Red",
+        "canonical": "#b3261e",
+        "tonalRamp": [
+          "#3a0f0c",
+          "#6b1711",
+          "#b3261e",
+          "#d95a52",
+          "#ff9a92",
+          "#f7c4c0",
+          "#fdecec",
+          "#fff6f5"
+        ]
+      },
+      "accent-text": {
+        "role": "primary",
+        "displayName": "Accessible Blue",
+        "canonical": "#0066d6",
+        "tonalRamp": [
+          "#00234d",
+          "#003d85",
+          "#0052ab",
+          "#0066d6",
+          "#3385e0",
+          "#66a3e8",
+          "#a3c7f2",
+          "#e0ecfa"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "Chat header."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Message bubbles."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase section headings and table headers."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "SQL and inline code in the details panel."
+      }
+    },
+    "shadows": [
+      {
+        "name": "bubble",
+        "value": "0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.05)",
+        "purpose": "Soft lift on message bubbles only."
+      },
+      {
+        "name": "bubble-user",
+        "value": "0 1px 2px rgba(10,132,255,0.25), 0 2px 6px rgba(10,132,255,0.18)",
+        "purpose": "Blue-tinted lift for user bubbles."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 3px rgba(10,132,255,0.15)",
+        "purpose": "Chat input focus glow."
+      }
+    ],
+    "motion": [
+      {
+        "name": "message-in",
+        "value": "0.18s ease-out, opacity 0 to 1, translateY 4px to 0",
+        "purpose": "New message entrance."
+      },
+      {
+        "name": "state-fast",
+        "value": "0.15s ease",
+        "purpose": "Hover, focus and caret transitions."
+      },
+      {
+        "name": "typing-bounce",
+        "value": "1.2s infinite ease-in-out",
+        "purpose": "Pending indicator dots."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "stack",
+        "value": "700px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Send Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary pill action in the chat input row.",
+      "html": "<button class=\"ds-btn-primary\">Send</button>",
+      "css": ".ds-btn-primary { padding: 10px 20px; border: none; border-radius: 999px; background: #0066d6; color: #fff; font-size: 1em; font-weight: 600; cursor: pointer; transition: opacity .15s ease, transform .05s ease; } .ds-btn-primary:hover { opacity: .9; } .ds-btn-primary:active { transform: scale(.97); } .ds-btn-primary:focus-visible { outline: 2px solid #0a84ff; outline-offset: 2px; }"
+    },
+    {
+      "name": "Chat Input",
+      "kind": "input",
+      "refersTo": "input-chat",
+      "description": "Pill text field with blue focus ring.",
+      "html": "<input class=\"ds-input-chat\" placeholder=\"Ask a question about your data\" />",
+      "css": ".ds-input-chat { width: 100%; padding: 12px 16px; border: 1px solid #e3e4e8; border-radius: 999px; font-size: 1em; background: #f7f8fa; color: #1c1e21; outline: none; transition: border-color .15s ease, box-shadow .15s ease; } .ds-input-chat::placeholder { color: #6b7280; } .ds-input-chat:focus { border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,.15); }"
+    },
+    {
+      "name": "User Bubble",
+      "kind": "card",
+      "refersTo": "bubble-user",
+      "description": "The asker's message.",
+      "html": "<div class=\"ds-bubble-user\">Which artist has the most albums?</div>",
+      "css": ".ds-bubble-user { display: inline-block; max-width: 85%; padding: 10px 14px; border-radius: 16px; border-bottom-right-radius: 4px; background: #0066d6; color: #fff; line-height: 1.45; font-size: .96em; box-shadow: 0 1px 2px rgba(0,102,214,.25), 0 2px 6px rgba(0,102,214,.18); }"
+    },
+    {
+      "name": "Assistant Bubble",
+      "kind": "card",
+      "refersTo": "bubble-assistant",
+      "description": "The system's plain-language answer.",
+      "html": "<div class=\"ds-bubble-assistant\">Iron Maiden has the most albums, with 21.</div>",
+      "css": ".ds-bubble-assistant { display: inline-block; max-width: 85%; padding: 10px 14px; border-radius: 16px; border-bottom-left-radius: 4px; background: #f0f1f4; color: #1c1e21; line-height: 1.45; font-size: .96em; box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.05); }"
+    },
+    {
+      "name": "Details Panel",
+      "kind": "custom",
+      "refersTo": "details-panel",
+      "description": "Collapsible transparency card with timings and SQL.",
+      "html": "<div class=\"ds-details\"><div class=\"ds-details-h\">Timings</div><div class=\"ds-row\"><span>Router</span><span>0.4s</span></div><div class=\"ds-row ds-total\"><span>Total</span><span>2.1s</span></div><pre class=\"ds-code\">SELECT 1;</pre></div>",
+      "css": ".ds-details { display: flex; flex-direction: column; gap: 6px; background: #f7f8fa; border: 1px solid #e3e4e8; border-radius: 10px; padding: 10px 12px; font-size: .82em; color: #1c1e21; } .ds-details-h { font-size: .78em; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #6b7280; } .ds-row { display: flex; justify-content: space-between; } .ds-total { border-top: 1px solid #e3e4e8; padding-top: 5px; font-weight: 700; } .ds-code { margin: 0; background: #fff; border: 1px solid #e3e4e8; border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, Menlo, monospace; font-size: .92em; }"
+    },
+    {
+      "name": "Cache Badge",
+      "kind": "chip",
+      "refersTo": "button-primary",
+      "description": "Outlined pill marking a cached answer.",
+      "html": "<span class=\"ds-badge\">cached</span>",
+      "css": ".ds-badge { font-size: .7em; font-weight: 600; color: #0066d6; border: 1px solid #0066d6; border-radius: 999px; padding: 1px 8px; }"
+    },
+    {
+      "name": "Schema Row",
+      "kind": "nav",
+      "refersTo": "sidebar-input",
+      "description": "Expandable table entry in the sidebar schema tree.",
+      "html": "<button class=\"ds-schema-row\"><span class=\"ds-caret\">&#9654;</span><span class=\"ds-name\">Album</span><span class=\"ds-count\">3</span></button>",
+      "css": ".ds-schema-row { width: 100%; display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 6px 4px; font-size: .85em; color: #1c1e21; cursor: pointer; border-radius: 6px; text-align: left; } .ds-schema-row:hover { background: #fff; } .ds-schema-row:focus-visible { outline: 2px solid #0a84ff; } .ds-caret { font-size: .7em; color: #6b7280; } .ds-name { font-weight: 600; flex: 1; } .ds-count { font-size: .8em; color: #6b7280; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Glass Box",
+    "overview": "The product answers in the voice of an ordinary messaging app, then lets the reader lift the lid. Everything the system did to reach an answer is present, but folded behind a quiet details control so a non-technical analyst reads the plain sentence first. Transparency is available, never imposed.\n\nThe surface is soft and familiar: system font, rounded bubbles, hairline borders, tonal greys, and one blue voice. It is flat at rest; only message bubbles carry a faint shadow.",
+    "keyCharacteristics": [
+      "Chat-bubble lineage: user right in blue, assistant left in tonal grey.",
+      "One accent, used for identity and action only.",
+      "Depth by tonal surface and hairline border, not by shadow.",
+      "Detail on demand: inspection UI is smaller, muted, and collapsible.",
+      "Light and dark are equal citizens via CSS custom properties."
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Messenger Blue is the only chromatic color. A new hue needs a semantic job (state, status), never decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Token Only Rule",
+        "body": "Components read colors from the --bg/--surface/--text/--accent custom properties so dark mode comes free; raw hex belongs only in the token block and the status dot.",
+        "section": "colors"
+      },
+      {
+        "name": "The Quiet Detail Rule",
+        "body": "Technical content (SQL, timings, prompts) is set smaller and muted compared to the answer. Size encodes audience.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Chrome Rule",
+        "body": "Header, sidebar, panels and inputs never cast shadows. Only content (message bubbles) lifts.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do lead every response with the plain-language answer; keep SQL and timings behind the Details toggle.",
+      "Do use Messenger Blue only for identity and action.",
+      "Do reference colors through the CSS custom properties so both color schemes work.",
+      "Do keep the 16px bubble with a 4px sender-side tail.",
+      "Do keep focus visible: blue border plus ring on the chat input."
+    ],
+    "donts": [
+      "Don't add shadows to chrome (header, sidebar, panels).",
+      "Don't introduce a second accent hue or gradients.",
+      "Don't show raw SQL or timing data in the primary answer flow.",
+      "Don't set body or answer text below 0.9em; reserve small sizes for detail.",
+      "Don't hardcode hex values in component rules."
+    ]
+  }
+}
