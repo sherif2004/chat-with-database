@@ -1,158 +1,275 @@
-# Chat With Database
+# Askbase — Chat With Database
 
-Ask questions in natural language about a PostgreSQL database (the demo uses Chinook, and you can connect your own from the UI). The question is converted to SQL, executed, and the result is answered in plain language.
+Ask questions about a PostgreSQL database in plain language. Askbase turns each question into a safe, read-only SQL query, runs it, and answers in plain language, with the SQL and result table one click away. A demo database (Chinook) is included, and every user can connect their own.
 
-The step-by-step path a message takes is in [docs/workflow.md](docs/workflow.md).
+## Contents
 
-## Structure (MVC + graph)
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [How it works](#how-it-works)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Hybrid models](#hybrid-models)
+- [Accounts and security](#accounts-and-security)
+- [Conversations](#conversations)
+- [API](#api)
+- [Answer cache](#answer-cache)
+- [Few-shot examples](#few-shot-examples)
+- [Project structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
 
+## Features
+
+**Chat**
+- Natural-language questions in, plain-language answers out, with follow-ups that remember the last few exchanges.
+- A results table you can sort, copy, export to CSV, and (for a label plus a number) view as a bar chart.
+- Staged progress while a question runs: reading, writing the query, running it, writing the answer.
+- Regenerate an answer, edit your last question, and one-click follow-up suggestions.
+- Starter questions written for the connected database.
+
+**Conversations**
+- Many chats per user, grouped by day, renamed or deleted from the sidebar.
+- New chats are named automatically by a small language model.
+
+**Your data**
+- Sign up and log in; every user has their own history and their own connected database.
+- Connect any PostgreSQL database from the UI. Its URL is stored encrypted.
+
+**Safety**
+- Prompt-injection input check, a SQL guard (one `SELECT`, known tables only), and read-only execution with a timeout and row cap.
+
+**Interface**
+- Light and dark mode, six page palettes and six main colors, chosen from an Appearance menu.
+- Keyboard-accessible, with reduced-motion support.
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python, FastAPI, SQLAlchemy |
+| Pipeline | LangGraph (`StateGraph`), sqlglot for SQL validation |
+| Models | Azure OpenAI (a capable and a cheap chat deployment, plus embeddings) |
+| Data | PostgreSQL (app tables and the demo database), Redis (answer cache), Qdrant (few-shot examples) |
+| Frontend | React 18, Vite, plain CSS |
+
+## How it works
+
+Every message goes through a LangGraph pipeline:
+
+1. **Input guard**: length limit and prompt-injection patterns.
+2. **Answer cache (Redis)**: the same question (ignoring case, punctuation and extra spaces) asked by the same user is answered from Redis with no model call and no SQL. The response has `cache_hit: true`.
+3. **Connection and history**: picks the user's database and loads the last 3 exchanges of the current conversation (in parallel), so follow-ups work.
+4. **Router**: a small model classifies the message as `greeting`, `data_question`, `off_topic` or `unsafe`. Only data questions continue.
+5. **Dynamic few-shot**: the question is embedded, and similar stored question and SQL pairs (from Qdrant) are added to the SQL prompt.
+6. **SQL guard**: parses the generated SQL: one `SELECT` only, known tables only, no `pg_*`, `dblink` or `set_config`-style functions.
+7. **Read-only execution with retry**: runs in a read-only transaction with a statement timeout and row cap. If Postgres rejects the query, the error is fed back to the model, for up to 3 attempts, before a "can't answer" message.
+8. **Answer and learn**: the model writes a short answer from the first 20 rows. After the response is sent, in the background, the exchange is saved, the response is cached, and a query that passed the guard and returned rows is stored as a few-shot example.
+
+For a new chat, a title is generated alongside steps 2 to 8, so it adds no waiting.
+
+A response `result` is either `{"type": "message", "message": "..."}` or `{"type": "table", "queries": [{"sql", "columns", "rows", "truncated"}, ...], "answer": "..."}`.
+
+## Getting started
+
+### Prerequisites
+
+- Python 3.10 or newer
+- Node.js 18 or newer
+- Docker (for Qdrant and Redis)
+- A PostgreSQL database (a hosted one such as Supabase or Railway works)
+- An Azure OpenAI resource with two chat deployments and one embedding deployment
+
+### 1. Configure
+
+```bash
+cp .env.example .env
 ```
-app/
-  main.py          FastAPI app
-  config.py        environment settings
-  graphs/          the chat pipeline as a LangGraph StateGraph:
-                   chat_graph.py (nodes/edges, incl. the SQL retry loop),
-                   chat_state.py (graph state shape)
-  models/          data access: app database, chat history (the durable
-                   conversation record), saved connections, schema
-                   introspection, SQL execution, Qdrant example store
-  views/           request/response schemas
-  controllers/     invokes the graph, turns the final state into a response
-  routes/          FastAPI endpoints (chat, connections)
-  services/        Azure OpenAI calls (llm_service), all prompts (prompts.py),
-                   the intent router, embeddings, few-shot example lookup,
-                   the Redis response cache (cache_service.py)
-  guardrails/      input check (prompt injection) and SQL check (read-only)
-  timing.py        per-step timings returned with every response
-docs/workflow.md   what happens to a message, step by step (with the graph diagram)
-docker/            docker-compose.yml: runs Qdrant and Redis
-scripts/deploy.py  loads data/*.csv into the database (needs scripts/requirements.txt)
+
+Fill in `.env`. At minimum: the Azure OpenAI values, `DATABASE_URL`, and `APP_SECRET_KEY` (needed to connect your own databases):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-## Run locally
+### 2. Start Qdrant and Redis
 
+```bash
+docker compose -f docker/docker-compose.yml up -d
 ```
-cp .env.example .env   # fill in values
-docker compose -f docker/docker-compose.yml up -d   # Qdrant + Redis
+
+### 3. Start the backend
+
+One `requirements.txt` covers the API and the demo-data script.
+
+```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-`POST /chat` with `{"question": "Which artist has the most albums?"}` and the session cookie from `POST /auth/login`
+The API runs at `http://localhost:8000` (interactive docs at `/docs`).
 
-## Frontend (UI + chat history)
+### 4. Load the demo data (optional)
 
+`scripts/deploy.py` loads the Chinook CSVs from `data/` into the database in `DATABASE_URL`. It uses the same packages already installed in step 3:
+
+```bash
+python scripts/deploy.py
 ```
+
+It replaces any existing tables named `Album`, `Artist`, `Customer`, `Employee`, `Genre`, `Invoice`, `InvoiceLine`, `MediaType`, `Playlist`, `PlaylistTrack` and `Track`.
+
+### 5. Start the frontend
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Opens a React chat UI at `http://localhost:5173`, talking to the backend at
-`http://localhost:8000`. Chat history is stored per signed-in user, server-side, in a
-separate `app.chat_history` table (not `public`, so it never leaks into the
-text-to-SQL schema), and restored on reload.
+Open `http://localhost:5173`, create an account, and ask a question. The frontend talks to the API at `http://localhost:8000` (set in `frontend/src/api.js`).
 
-## Accounts
+## Configuration
+
+All settings are environment variables, read from `.env`.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `AZURE_OPENAI_API_KEY` | yes | | Azure OpenAI key |
+| `AZURE_OPENAI_ENDPOINT` | yes | | `https://<resource>.openai.azure.com` |
+| `AZURE_OPENAI_DEPLOYMENT` | yes | | Capable chat deployment, for example `gpt-4.1-mini` |
+| `AZURE_OPENAI_DEPLOYMENT_LIGHT` | yes | | Cheap chat deployment, for example `gpt-4.1-nano` |
+| `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | yes | | Embedding deployment, for example `text-embedding-3-small` |
+| `AZURE_OPENAI_API_VERSION` | no | `2025-03-01-preview` | API version |
+| `LLM_TIMEOUT_SECONDS` | no | `30` | Per-call timeout |
+| `DATABASE_URL` | yes | | PostgreSQL for the app tables and the demo data |
+| `APP_SECRET_KEY` | for custom databases | | Encrypts saved database URLs |
+| `SESSION_TTL_DAYS` | no | `14` | Login session lifetime |
+| `COOKIE_SECURE` | no | `false` | Set `true` behind HTTPS |
+| `CORS_ORIGINS` | no | `http://localhost:5173` | Comma-separated frontend origins |
+| `MAX_QUESTION_LENGTH` | no | `500` | Longest accepted question |
+| `MAX_ROWS` | no | `100` | Row cap per query |
+| `STATEMENT_TIMEOUT_MS` | no | `10000` | Per-query timeout |
+| `REDIS_URL` | no | `redis://localhost:6379/0` | Answer cache |
+| `CACHE_TTL_SECONDS` | no | `3600` | How long cached answers live |
+| `QDRANT_URL` | no | `http://localhost:6333` | Few-shot example store |
+| `QDRANT_API_KEY` | no | | Only for Qdrant Cloud |
+| `QDRANT_COLLECTION` | no | `chat_examples` | Collection name |
+| `FEW_SHOT_MIN_SCORE` | no | `0.6` | Minimum similarity for an example to be used |
+
+Use deployment names, not model names. Both chat deployments must support structured (JSON schema) output. If an Azure call fails or times out, the API returns HTTP 503 with a readable message.
+
+## Hybrid models
+
+Two chat deployments split the work by difficulty:
+
+| Deployment | Used for |
+|---|---|
+| `AZURE_OPENAI_DEPLOYMENT` (capable) | Writing the SQL, writing the final answer, and follow-up suggestions |
+| `AZURE_OPENAI_DEPLOYMENT_LIGHT` (cheap) | Classifying the message (router), naming new chats, and starter questions |
+
+SQL needs real reasoning (joins, multi-statement decisions, schema disambiguation). Answers and follow-ups run on the capable model because answering in the question's language proved unreliable on a nano-class model: about 1 in 3 answers came back in the wrong language, even after prompt tuning. Naming and starters are short, low-risk tasks, so the cheap model handles them.
+
+To use one model for everything, set both deployments to the same name.
+
+## Accounts and security
 
 Sign-up and login are built in and stored in the same Postgres database, in the `app` schema (`app.users`, `app.user_sessions`).
 
-- Passwords are hashed with scrypt. Login sets an `httpOnly`, `SameSite=Lax` session cookie; the server stores only a SHA-256 of the token, so sessions can be revoked (logout deletes the row).
-- Every `/chat` and `/connections` route requires the cookie. The user is read from the session, never from the request body, so one user cannot read another's history or connection.
+- Passwords are hashed with scrypt. Login sets an `httpOnly`, `SameSite=Lax` session cookie. Only a SHA-256 of the token is stored, so sessions can be revoked (logout deletes the row).
+- Every chat, conversation and connection route requires the session. The user is read from the cookie, never from the request body, so one user cannot read another's history or database. History, saved connections and cached answers are keyed `u:<user id>`.
 - Saved database URLs are encrypted at rest (Fernet) in `app.user_connections`. This needs `APP_SECRET_KEY`; without it, connecting a custom database is refused. The old plaintext `app.connections` table is no longer read and can be dropped.
-- Failed logins are throttled (5 per 15 minutes per IP + email, in memory).
-- Set `COOKIE_SECURE=true` behind HTTPS and `CORS_ORIGINS` to your frontend origin(s).
+- Login attempts are limited in Redis: 5 failures per 15 minutes per IP and email, 30 per IP, and 25 per email. Sign-ups are limited to 10 per hour per IP.
+- State-changing requests from an origin that is not in `CORS_ORIGINS` are rejected.
+- Chat history lives in `app.chat_history`, not in `public`, so it never leaks into the text-to-SQL schema.
 
-Endpoints: `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`.
+Not built yet: email verification and password reset.
 
 ## Conversations
 
-Each user has many conversations (`app.conversations`); history, follow-up context and regenerate/edit all work per conversation. Endpoints: `GET/POST /conversations`, `PATCH/DELETE /conversations/{id}`, `GET /conversations/{id}/messages`, `GET /conversations/{id}/followups`, `GET /connections/starters`.
+Each user has many conversations (`app.conversations`). History, follow-up context, regenerate and edit all work per conversation. A new chat gets a placeholder title from the first question, then a generated one from the small model. A title you set yourself is never overwritten.
 
-`POST /chat/stream` is `POST /chat` with progress: it sends server-sent `stage` events as each pipeline step starts, then one `done` (the same payload as `/chat`) or `error`. Send `replace_last: true` to regenerate or edit the newest exchange (it also skips the answer cache).
+`POST /chat/stream` does the same work as `POST /chat` and also sends progress as server-sent events: a `stage` event as each pipeline step starts, then one `done` (the same payload as `/chat`) or `error`. Send `replace_last: true` to regenerate or edit the newest exchange; it also skips the answer cache.
 
-## Flow
+## API
 
-The pipeline is a LangGraph `StateGraph`, not hand-rolled branching. Full detail,
-diagram and error table: [docs/workflow.md](docs/workflow.md).
+All routes except sign-up and login need the session cookie.
 
-1. **Input guard** – length limit and prompt-injection patterns.
-2. **Answer cache (Redis)** – if the same question (case, punctuation and extra spaces ignored) was already asked in this session, the stored answer is returned from Redis. No LLM call, no SQL. The response has `cache_hit: true`. Entries expire after `CACHE_TTL_SECONDS`.
-3. **Connection + history** – picks the session's database and loads the last 3 exchanges (run in parallel, since neither depends on the other) so follow-ups work.
-4. **Router** – a small LLM call classifies the message (`greeting`, `data_question`, `off_topic`, `unsafe`) and only `data_question` continues.
-5. **Dynamic few-shot** – the question is embedded, and stored question→SQL pairs that are similar enough (found in Qdrant) are added to the SQL prompt.
-6. **SQL guard** – parses the generated SQL (sqlglot): one `SELECT` only, known tables only, no `pg_*`/`dblink`/`set_config`-style functions.
-7. **Read-only execution, with retry** – runs in a read-only transaction with a statement timeout and a row cap. If Postgres itself rejects the query (bad column, syntax slip the guard let through, ...), the error is fed back to the model and it gets up to 3 attempts total before falling back to a "can't answer" message — no more HTTP 500s on a bad query.
-8. **Answer + learn** – the LLM writes a short answer from the first 20 rows. After the response is sent, in the background: the exchange is saved to `chat_history`, the response is cached in Redis, and a query that passed the guard and returned rows is saved as a few-shot example.
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/auth/signup` | Create an account and sign in |
+| `POST` | `/auth/login` | Sign in |
+| `POST` | `/auth/logout` | Sign out |
+| `GET` | `/auth/me` | The signed-in user |
+| `POST` | `/chat` | Ask a question and get the whole response |
+| `POST` | `/chat/stream` | Ask a question, with stage events |
+| `GET` | `/conversations` | List conversations |
+| `POST` | `/conversations` | Create an empty conversation |
+| `PATCH` | `/conversations/{id}` | Rename |
+| `DELETE` | `/conversations/{id}` | Delete, with its messages |
+| `GET` | `/conversations/{id}/messages` | Messages in a conversation |
+| `GET` | `/conversations/{id}/followups` | Suggested next questions |
+| `POST` | `/connections` | Connect your own PostgreSQL database |
+| `GET` | `/connections/current` | The connected database and its schema |
+| `GET` | `/connections/starters` | Starter questions for the connected schema |
 
-Response `result` is one of `{"type": "message", "message": "..."}` or
-`{"type": "table", "queries": [{"sql", "columns", "rows", "truncated"}, ...], "answer": "..."}`.
+Example (after logging in and keeping the cookie):
 
-Limits are set with `MAX_QUESTION_LENGTH`, `MAX_ROWS` and `STATEMENT_TIMEOUT_MS`.
-
-## Azure OpenAI settings
-
+```bash
+curl -b cookies.txt -H "Content-Type: application/json" \
+  -d '{"question": "Which artist has the most albums?"}' \
+  http://localhost:8000/chat
 ```
-AZURE_OPENAI_API_KEY=
-AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
-AZURE_OPENAI_DEPLOYMENT=<capable chat deployment, e.g. gpt-4.1-mini>
-AZURE_OPENAI_DEPLOYMENT_LIGHT=<cheap chat deployment, e.g. gpt-4.1-nano>
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<embedding deployment name>
-# optional
-AZURE_OPENAI_API_VERSION=2025-03-01-preview
-LLM_TIMEOUT_SECONDS=30
-```
-
-Use deployment names, not model names. Both chat deployments must support
-structured (JSON schema) output. If an Azure call fails or times out, `/chat`
-returns HTTP 503 with a readable message.
-
-**Hybrid models:** `AZURE_OPENAI_DEPLOYMENT` (the capable model) writes the SQL
-and the final answer — SQL because it needs real reasoning (joins,
-multi-statement decisions, schema disambiguation), and the answer because
-answering-in-the-question's-language turned out to be unreliable on a nano-class
-model even after prompt tuning (verified: ~1 in 3 answers came back in the
-wrong language). `AZURE_OPENAI_DEPLOYMENT_LIGHT` (the cheap model) only handles
-`classify_intent`, a simple 4-way classification it's reliably good at. If you
-don't want this split, set both to the same
-deployment.
 
 ## Answer cache
 
-Repeated questions are answered from Redis instead of calling the model. It is per
-session, matches on the normalized question (word matching, not semantic), expires
-after `CACHE_TTL_SECONDS` (default 3600s), and returns the earlier answer without
-re-running the SQL, so numbers are as of when it was cached. `app.chat_history`
-(Postgres) is the separate, durable conversation record — it never expires and
-isn't the cache.
+Repeated questions are answered from Redis instead of calling the model. The cache is per user, matches on the normalized question (word matching, not semantic), expires after `CACHE_TTL_SECONDS`, and returns the earlier answer without re-running the SQL, so numbers are as of when it was cached. `app.chat_history` (Postgres) is the separate, durable conversation record. It never expires and isn't the cache.
 
-Run Redis locally with Docker:
-
-```
-docker compose -f docker/docker-compose.yml up -d
-```
-
-Or point `REDIS_URL` at any Redis instance. If Redis is unreachable, the app logs a
-warning and every lookup is a miss — it never blocks a response.
+If Redis is unreachable, the app logs a warning and every lookup is a miss; it never blocks a response.
 
 ## Few-shot examples
 
-There is no seed data: the store starts empty and every new question that produces a working query (one that passed the SQL guard and returned rows) is saved with its SQL. Later, similar questions get those pairs in their prompt, so answers improve with use. Duplicates (same question or same SQL) are skipped, using Qdrant payload indexes on `question_key` and `sql_key`.
+There is no seed data. The store starts empty, and every question that produces a working query (one that passed the SQL guard and returned rows) is saved with its SQL. Later, similar questions get those pairs in their prompt, so answers improve with use. Duplicates (same question or same SQL) are skipped, using Qdrant payload indexes on `question_key` and `sql_key`.
 
-Stored in a **Qdrant** collection (`chat_examples`, cosine distance). The collection is created on startup and its vector size is detected from the embedding model, so nothing else needs configuring. If you switch to a model with a different size, the app refuses to touch the existing collection and tells you to delete it so it can be rebuilt.
+Examples live in a Qdrant collection (`chat_examples`, cosine distance). It is created on startup and its vector size is detected from the embedding model. If you switch to a model with a different size, the app refuses to touch the existing collection and tells you to delete it so it can be rebuilt. Only examples with similarity of at least `FEW_SHOT_MIN_SCORE` go into the prompt (at most 20); if none qualify, the prompt has no examples.
 
-Run Qdrant locally with Docker (data is kept in a volume):
+Run Qdrant locally with Docker (data is kept in a volume), or use Qdrant Cloud and set `QDRANT_URL` and `QDRANT_API_KEY`. To stop the local services: `docker compose -f docker/docker-compose.yml down` (add `-v` to also delete the saved examples).
 
-```
-docker compose -f docker/docker-compose.yml up -d
-```
+If Qdrant or embeddings are unreachable at startup, the app logs a warning and answers without examples.
 
-Stop it with `docker compose -f docker/docker-compose.yml down` (add `-v` to also delete the saved examples).
-
-or use Qdrant Cloud and set `QDRANT_URL` and `QDRANT_API_KEY` in `.env` (the default URL is `http://localhost:6333`). Needs an Azure OpenAI **embedding** deployment:
+## Project structure
 
 ```
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+app/
+  main.py            FastAPI app, middleware, startup
+  config.py          environment settings
+  dependencies.py    signed-in user from the session cookie
+  timing.py          per-step timings returned with every response
+  graphs/            the chat pipeline (LangGraph StateGraph):
+                     chat_graph.py (nodes, edges, SQL retry loop), chat_state.py
+  models/            data access: users and sessions, conversations, chat
+                     history, saved connections, schema introspection, SQL
+                     execution, the Qdrant example store
+  views/             request and response schemas
+  controllers/       runs the graph and turns the final state into a response
+  routes/            endpoints: auth, chat, conversations, connections
+  services/          LLM calls and prompts, intent router, chat titles,
+                     starter and follow-up suggestions, embeddings, few-shot
+                     lookup, Redis cache, password hashing and rate limits,
+                     encryption of saved connection URLs
+  guardrails/        input check (prompt injection) and SQL check (read-only)
+frontend/
+  src/               React app: App.jsx, api.js, theme.js and components
+                     (conversation rail, composer, results table, progress,
+                     database drawer, appearance menu, sign-in screen)
+  public/            favicon
+data/                Chinook demo CSVs
+docker/              docker-compose.yml: Qdrant and Redis
+scripts/deploy.py    loads data/*.csv into the database
 ```
 
-If Qdrant or embedding is unreachable at startup, the app logs a warning and answers without examples. Only examples whose similarity to the question is at least `FEW_SHOT_MIN_SCORE` (0.6) go into the prompt (at most 20, as a safety ceiling); if none qualify, the prompt gets no examples.
+## Troubleshooting
+
+- **"Saving a database connection needs APP_SECRET_KEY"**: set `APP_SECRET_KEY` in `.env` and restart the backend.
+- **Sign-in works but the app shows a signed-out screen**: the browser must reach the API at the address set in `frontend/src/api.js`, and the address you open the frontend on must be listed in `CORS_ORIGINS`.
+- **Answers are slow or skip examples**: check that Redis and Qdrant are running (`docker compose -f docker/docker-compose.yml ps`). The app still works without them, just without caching and examples.
+- **HTTP 503 "language model is unavailable"**: an Azure OpenAI call failed or timed out; check the key, endpoint and deployment names.
