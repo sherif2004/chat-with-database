@@ -36,14 +36,7 @@ def _function_name(func: exp.Expression) -> str:
     return func.sql_name().lower()
 
 
-def _validate_statement(statement, allowed_tables: set[str]) -> str:
-
-    if not isinstance(statement, exp.Query):
-        raise GuardrailError("Only SELECT queries are allowed.")
-
-    for node in statement.walk():
-        if isinstance(node, _FORBIDDEN_NODES):
-            raise GuardrailError("Only read-only SELECT queries are allowed.")
+def _check_tables_and_functions(statement, allowed_tables: set[str]) -> None:
 
     cte_names = {cte.alias for cte in statement.find_all(exp.CTE)}
 
@@ -61,6 +54,18 @@ def _validate_statement(statement, allowed_tables: set[str]) -> str:
 
         if name in _FORBIDDEN_FUNCTIONS or name.startswith(_FORBIDDEN_FUNCTION_PREFIXES):
             raise GuardrailError(f"The function {name} is not allowed.")
+
+
+def _validate_statement(statement, allowed_tables: set[str]) -> str:
+
+    if not isinstance(statement, exp.Query):
+        raise GuardrailError("Only SELECT queries are allowed.")
+
+    for node in statement.walk():
+        if isinstance(node, _FORBIDDEN_NODES):
+            raise GuardrailError("Only read-only SELECT queries are allowed.")
+
+    _check_tables_and_functions(statement, allowed_tables)
 
     return statement.sql(dialect="postgres")
 
@@ -81,3 +86,42 @@ def validate_sql(sql: str, allowed_tables: set[str]) -> list[str]:
         raise GuardrailError(f"At most {MAX_STATEMENTS} SQL statements are allowed.")
 
     return [_validate_statement(statement, allowed_tables) for statement in statements]
+
+
+_WRITE_NODES = tuple(getattr(exp, name) for name in ("Insert", "Update", "Delete"))
+_FORBIDDEN_IN_WRITE = tuple(n for n in _FORBIDDEN_NODES if n not in _WRITE_NODES)
+
+
+def validate_write_sql(sql: str, allowed_tables: set[str]) -> str:
+    """Accept exactly one INSERT, UPDATE or DELETE over known tables in the
+    public schema and return it normalized. UPDATE and DELETE need a WHERE.
+    Only reachable by roles holding data:write; the read path above never
+    accepts any of this."""
+
+    try:
+        statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
+    except SqlglotError:
+        raise GuardrailError("The generated change could not be parsed.")
+
+    if len(statements) != 1:
+        raise GuardrailError("Exactly one statement is allowed.")
+
+    statement = statements[0]
+
+    if not isinstance(statement, _WRITE_NODES):
+        raise GuardrailError("Only INSERT, UPDATE or DELETE statements are allowed.")
+
+    # A second write hidden in a CTE or subquery would slip past the check above.
+    if sum(isinstance(node, _WRITE_NODES) for node in statement.walk()) != 1:
+        raise GuardrailError("Only one INSERT, UPDATE or DELETE is allowed.")
+
+    for node in statement.walk():
+        if isinstance(node, _FORBIDDEN_IN_WRITE):
+            raise GuardrailError("That statement type is not allowed.")
+
+    if isinstance(statement, (exp.Update, exp.Delete)) and not statement.args.get("where"):
+        raise GuardrailError("UPDATE and DELETE must have a WHERE clause.")
+
+    _check_tables_and_functions(statement, allowed_tables)
+
+    return statement.sql(dialect="postgres")

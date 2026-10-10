@@ -206,6 +206,23 @@ def connect(session_id: str, database_url: str, label: str | None = None) -> Ses
     return connection
 
 
+def forget_connection(session_id: str) -> None:
+    """Drop a session's saved connection (used when its account is deleted)."""
+
+    old = _cache.pop(session_id, None)
+    if old is not None:
+        old.engine.dispose()
+
+    def run():
+        with app_engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM app.user_connections WHERE session_id = :session_id"),
+                {"session_id": session_id},
+            )
+
+    run_or_log(run, logger, "Could not delete connection for session %s: %s", session_id)
+
+
 def get_or_default(session_id: str) -> SessionConnection:
     """Return the session's connection, lazily reconnecting from a saved
     row if needed, otherwise the default (.env) connection.

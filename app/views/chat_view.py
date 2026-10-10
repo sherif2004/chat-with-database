@@ -34,8 +34,20 @@ class TableResult(BaseModel):
     answer: str | None = None
 
 
+class ChangeResult(BaseModel):
+    """A previewed INSERT/UPDATE/DELETE awaiting an admin's confirmation.
+    `token` is absent once the preview is stored in history: it only works
+    once and expires, so an old chat never offers a stale Confirm."""
+
+    type: Literal["change"] = "change"
+    message: str
+    sql: str
+    affected_rows: int
+    token: str | None = None
+
+
 Result = Annotated[
-    MessageResult | TableResult,
+    MessageResult | TableResult | ChangeResult,
     Field(discriminator="type")
 ]
 
@@ -62,7 +74,7 @@ class DebugInfo(BaseModel):
 class ChatResponse(BaseModel):
     intent: Literal[
         "greeting", "off_topic", "unsafe", "data_question",
-        "connection_error", "needs_clarification"
+        "connection_error", "needs_clarification", "data_change"
     ]
     question: str
     sql: list[str] | None = None
@@ -77,3 +89,12 @@ class HistoryEntry(BaseModel):
     question: str
     response: ChatResponse
     created_at: datetime
+
+
+class ConfirmChangeRequest(BaseModel):
+    token: str
+
+
+class ConfirmChangeResponse(BaseModel):
+    message: str
+    affected_rows: int

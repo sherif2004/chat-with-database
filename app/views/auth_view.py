@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.services.auth_service import MAX_PASSWORD_LENGTH
@@ -11,3 +14,16 @@ class Credentials(BaseModel):
 class UserInfo(BaseModel):
     id: int
     email: str
+    role: str = "user"
+    permissions: list[str] = []
+
+
+class AccountInfo(BaseModel):
+    id: int
+    email: str
+    role: str
+    created_at: datetime | None = None
+
+
+class RoleChange(BaseModel):
+    role: Literal["user", "supervisor", "admin"]

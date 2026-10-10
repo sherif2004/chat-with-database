@@ -8,15 +8,18 @@ from langgraph.graph import END, StateGraph
 from app.graphs.chat_state import GraphState
 from app.guardrails.errors import GuardrailError, UnknownTableError
 from app.guardrails.input_guard import check_question
-from app.guardrails.sql_guard import validate_sql
+from app.guardrails.sql_guard import validate_sql, validate_write_sql
 from app.models.connection_model import DatabaseConnectionError, get_or_default
 from app.models.history_model import get_recent_history
-from app.models.query_model import execute_sql
+from app.models.query_model import dry_run_write, execute_sql
 from app.services.cache_service import get_cached_response
 from app.services.example_service import find_similar, remember
-from app.services.llm_service import generate_answer, generate_sql
+from app.config import settings
+from app.services import pending_change_service
+from app.services.llm_service import generate_answer, generate_sql, generate_write_sql
 from app.services.router_service import classify_intent
 from app.views.chat_view import (
+    ChangeResult,
     ChatResponse,
     ExampleUsed,
     MessageResult,
@@ -37,6 +40,10 @@ CANNOT_ANSWER_MESSAGE = (
 )
 
 RECENT_HISTORY_LIMIT = 3
+
+CANNOT_CHANGE_MESSAGE = (
+    "I couldn't prepare that change: the data doesn't contain what it refers to."
+)
 
 # Total attempts allowed at generating+running SQL for one question (the
 # first try plus retries once the database rejects the query).
@@ -177,7 +184,10 @@ def classify_intent_node(state: GraphState, config) -> dict:
 
     with timings.step("router"):
         decision, prompt, usage = classify_intent(
-            state["question"], _connection(config).schema_text, state.get("history")
+            state["question"],
+            _connection(config).schema_text,
+            state.get("history"),
+            can_write=state.get("can_write", False),
         )
     debug.prompts["router"] = prompt
     _record_usage(debug, "router", usage)
@@ -188,6 +198,13 @@ def classify_intent_node(state: GraphState, config) -> dict:
         return _message_state("off_topic", decision.reply or OFF_TOPIC_MESSAGE)
     if decision.intent == "unsafe":
         return _message_state("unsafe", decision.reply or UNSAFE_MESSAGE)
+
+    if decision.intent == "data_change":
+        # Only offered to roles with data:write, but never trust the model:
+        # re-check here so a stray answer cannot open the write path.
+        if not state.get("can_write"):
+            return _message_state("unsafe", UNSAFE_MESSAGE)
+        return {"intent": "data_change"}
 
     return {"intent": "data_question"}
 
@@ -286,6 +303,91 @@ def execute_sql_node(state: GraphState, config) -> dict:
     return {"queries": queries, "sql_error": None}
 
 
+def generate_write_node(state: GraphState, config) -> dict:
+
+    timings, debug, _bg = _deps(config)
+    connection = _connection(config)
+
+    with timings.step("generate_sql"):
+        generation = generate_write_sql(
+            state["question"], connection.schema_text, state.get("history")
+        )
+    debug.prompts["generate_write_sql"] = generation.prompt
+    _record_usage(debug, "generate_write_sql", generation.usage)
+
+    if generation.clarification_question:
+        return _message_state("needs_clarification", generation.clarification_question)
+    if not generation.can_answer:
+        return _message_state("off_topic", generation.cannot_answer_message or CANNOT_CHANGE_MESSAGE)
+
+    return {"sql": generation.sql}
+
+
+def validate_write_node(state: GraphState, config) -> dict:
+
+    timings, _debug, _bg = _deps(config)
+    connection = _connection(config)
+
+    try:
+        with timings.step("sql_guard"):
+            statement = validate_write_sql(state["sql"], connection.schema.table_names)
+    except UnknownTableError:
+        return _message_state("off_topic", CANNOT_CHANGE_MESSAGE)
+    except GuardrailError as e:
+        return _message_state("unsafe", f"I can't make that change. ({e})")
+
+    return {"statements": [statement]}
+
+
+def preview_write_node(state: GraphState, config) -> dict:
+    """Runs the change inside a transaction that is always rolled back, to
+    learn how many rows it would touch. The admin sees that count and must
+    confirm before anything is saved."""
+
+    timings, _debug, _bg = _deps(config)
+    connection = _connection(config)
+    statement = state["statements"][0]
+
+    try:
+        with timings.step("execute_sql"):
+            rows = dry_run_write(statement, connection.engine)
+    except SQLAlchemyError as e:
+        reason = str(getattr(e, "orig", None) or e).strip().splitlines()[0]
+        return _message_state("off_topic", f"I couldn't prepare that change: {reason}")
+
+    if rows < 1:
+        return _message_state("off_topic", "That change wouldn't affect any rows, so I didn't prepare it.")
+
+    if rows > settings.max_write_rows:
+        return _message_state(
+            "unsafe",
+            f"That change would affect {rows} rows; the limit is {settings.max_write_rows}. "
+            "Narrow it down and try again.",
+        )
+
+    token = pending_change_service.store({
+        "owner": state["session_id"],
+        "conversation_id": state.get("conversation_id"),
+        "question": state["question"],
+        "sql": statement,
+        "rows": rows,
+        "connection_label": connection.label,
+    })
+
+    return {
+        "intent": "data_change",
+        "result": ChangeResult(
+            message=(
+                f"This will change {rows} row{'s' if rows != 1 else ''}. "
+                "Nothing is saved until you confirm."
+            ),
+            sql=statement,
+            affected_rows=rows,
+            token=token,
+        ),
+    }
+
+
 def sql_failed_node(state: GraphState, config) -> dict:
     return _message_state("off_topic", CANNOT_ANSWER_MESSAGE)
 
@@ -335,6 +437,12 @@ def _route_after_context(state: GraphState) -> str:
     return "error" if state.get("result") is not None else "ok"
 
 
+def _route_after_classify(state: GraphState) -> str:
+    if state.get("result") is not None:
+        return "end"
+    return "write" if state.get("intent") == "data_change" else "next"
+
+
 def _route_after_execute(state: GraphState) -> str:
     if state.get("sql_error"):
         return "retry" if state.get("retry_count", 0) < SQL_MAX_ATTEMPTS else "give_up"
@@ -355,6 +463,9 @@ def build_chat_graph():
     graph.add_node("generate_sql", generate_sql_node)
     graph.add_node("validate_sql", validate_sql_node)
     graph.add_node("execute_sql", execute_sql_node)
+    graph.add_node("generate_write", generate_write_node)
+    graph.add_node("validate_write", validate_write_node)
+    graph.add_node("preview_write", preview_write_node)
     graph.add_node("sql_failed", sql_failed_node)
     graph.add_node("generate_answer", generate_answer_node)
 
@@ -372,7 +483,14 @@ def build_chat_graph():
     graph.add_conditional_edges(
         "route_after_context", _route_after_context, {"error": END, "ok": "classify_intent"}
     )
-    graph.add_conditional_edges("classify_intent", _has_result, {"end": END, "next": "retrieve_examples"})
+    graph.add_conditional_edges(
+        "classify_intent",
+        _route_after_classify,
+        {"end": END, "next": "retrieve_examples", "write": "generate_write"},
+    )
+    graph.add_conditional_edges("generate_write", _has_result, {"end": END, "next": "validate_write"})
+    graph.add_conditional_edges("validate_write", _has_result, {"end": END, "next": "preview_write"})
+    graph.add_edge("preview_write", END)
     graph.add_edge("retrieve_examples", "generate_sql")
     graph.add_conditional_edges("generate_sql", _has_result, {"end": END, "next": "validate_sql"})
     graph.add_conditional_edges("validate_sql", _has_result, {"end": END, "next": "execute_sql"})

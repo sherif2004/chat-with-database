@@ -1,6 +1,7 @@
-from fastapi import Cookie, HTTPException
+from fastapi import Cookie, Depends, HTTPException
 
 from app.models.user_model import User, get_user_by_token
+from app.services.permissions import has_permission
 
 SESSION_COOKIE = "session"
 
@@ -16,6 +17,21 @@ def current_user(session: str | None = Cookie(default=None, alias=SESSION_COOKIE
         raise HTTPException(status_code=401, detail="Please sign in to continue.")
 
     return user
+
+
+def require_permission(permission: str):
+    """Like current_user, but also refuses (403) a user whose role lacks the
+    permission. The role is read from the database on every request, so a
+    promotion or demotion applies immediately."""
+
+    def dependency(user: User = Depends(current_user)) -> User:
+        if not has_permission(user.role, permission):
+            raise HTTPException(
+                status_code=403, detail="You don't have permission to do that."
+            )
+        return user
+
+    return dependency
 
 
 def owner_key(user: User) -> str:

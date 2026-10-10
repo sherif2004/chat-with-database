@@ -20,6 +20,7 @@ import Icon from "./components/Icon";
 import Message from "./components/Message";
 import Progress, { stageKeyFor } from "./components/Progress";
 import Rail from "./components/Rail";
+import UsersPanel, { can } from "./components/UsersPanel";
 
 // The product name shown in the browser tab; change it here and in index.html.
 const APP_NAME = "Askbase";
@@ -82,6 +83,7 @@ function ChatApp({ user, onSignedOut }) {
   const [followups, setFollowups] = useState([]);
   const [railOpen, setRailOpen] = useState(false);
   const [dbOpen, setDbOpen] = useState(false);
+  const [usersOpen, setUsersOpen] = useState(false);
 
   const bottomRef = useRef(null);
   const composerRef = useRef(null);
@@ -390,6 +392,7 @@ function ChatApp({ user, onSignedOut }) {
         onRename={handleRename}
         onDelete={handleDelete}
         onSignOut={handleSignOut}
+        onUsers={can(user, "users:read") ? () => setUsersOpen(true) : undefined}
       />
 
       <main className="chat" data-stage={sending ? stageKeyFor(stage) : undefined}>
@@ -526,6 +529,24 @@ function ChatApp({ user, onSignedOut }) {
         />
       </main>
 
+      {usersOpen && (
+        <>
+          <div className="scrim" onClick={() => setUsersOpen(false)} aria-hidden="true" />
+          <div className="drawer drawer-wide" role="dialog" aria-modal="true" aria-label="Users">
+            <button
+              type="button"
+              className="icon-button drawer-close"
+              aria-label="Close users panel"
+              onClick={() => setUsersOpen(false)}
+              autoFocus
+            >
+              <Icon name="close" />
+            </button>
+            <UsersPanel me={user} onUnauthorized={onSignedOut} />
+          </div>
+        </>
+      )}
+
       {dbOpen && (
         <>
           <div className="scrim" onClick={closeDatabase} aria-hidden="true" />
@@ -543,6 +564,7 @@ function ChatApp({ user, onSignedOut }) {
               connection={connection}
               connecting={connecting}
               onConnect={handleConnect}
+              canConnect={can(user, "connection:write")}
             />
           </div>
         </>

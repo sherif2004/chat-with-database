@@ -44,11 +44,18 @@ def _finish(timings, background_tasks, session_id, conversation_id, debug, **fie
     )
 
     dumped = response.model_dump(mode="json")
+    is_change = response.intent == "data_change"
+
+    if is_change and dumped["result"].get("type") == "change":
+        # The one-time token lives only in this response, not in history.
+        dumped["result"]["token"] = None
+
     background_tasks.add_task(save_message, session_id, conversation_id, fields["question"], dumped)
 
     # Cache hits aren't re-cached — the entry that served this one is
-    # already there and still fresh.
-    if not fields.get("cache_hit"):
+    # already there and still fresh. A change is never cached: replaying one
+    # must go back through preview and confirmation.
+    if not fields.get("cache_hit") and not is_change:
         background_tasks.add_task(set_cached_response, session_id, fields["question"], dumped)
 
     return response
@@ -76,6 +83,7 @@ def chat_with_database(
     background_tasks: BackgroundTasks,
     session_id: str,
     timings: Timings | None = None,
+    can_write: bool = False,
 ) -> ChatResponse:
     """`session_id` is the signed-in user's owner key (see dependencies.owner_key): the key under
     which history, the saved connection and cached answers are stored."""
@@ -108,6 +116,7 @@ def chat_with_database(
             "session_id": session_id,
             "conversation_id": conversation_id,
             "skip_cache": request.replace_last,
+            "can_write": can_write,
             "raw_question": request.question,
         },
         config={

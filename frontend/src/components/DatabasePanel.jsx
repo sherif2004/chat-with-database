@@ -1,7 +1,7 @@
 import { useState } from "react";
 import SchemaTree from "./SchemaTree";
 
-export default function DatabasePanel({ connection, connecting, onConnect }) {
+export default function DatabasePanel({ connection, connecting, onConnect, canConnect = true }) {
   const [formOpen, setFormOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
@@ -50,6 +50,11 @@ export default function DatabasePanel({ connection, connecting, onConnect }) {
           </div>
         </div>
 
+        {!canConnect && (
+          <p className="connection-sublabel">Your role can only use the demo database.</p>
+        )}
+        {canConnect && (
+          <>
         <button
           type="button"
           className="sidebar-link-button"
@@ -85,6 +90,8 @@ export default function DatabasePanel({ connection, connecting, onConnect }) {
               {connecting ? "Connecting…" : "Connect"}
             </button>
           </form>
+        )}
+          </>
         )}
       </div>
 

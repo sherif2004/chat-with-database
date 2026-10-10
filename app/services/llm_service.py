@@ -5,7 +5,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import settings
 from app.models.example_model import SimilarExample
-from app.services.prompts import answer_prompt, sql_prompt
+from app.services.prompts import answer_prompt, sql_prompt, write_sql_prompt
 from app.views.chat_view import TokenUsage
 
 client = AzureOpenAI(
@@ -110,6 +110,25 @@ def generate_sql(
             can_answer=False,
             cannot_answer_message=message or None,
             clarification_question=clarification or None,
+            prompt=prompt,
+            usage=usage,
+        )
+
+    return SQLGeneration(can_answer=True, sql=draft.sql.strip(), prompt=prompt, usage=usage)
+
+
+def generate_write_sql(question, schema_text, history: list[dict] | None = None) -> SQLGeneration:
+    """One INSERT/UPDATE/DELETE for an admin's request. Only ever previewed
+    here; nothing runs until it is confirmed."""
+
+    prompt = write_sql_prompt(question, schema_text, history or [])
+    draft, usage = ask_structured(prompt, _SQLDraft, max_output_tokens=1000)
+
+    if draft is None or not draft.can_answer or not (draft.sql or "").strip():
+        return SQLGeneration(
+            can_answer=False,
+            cannot_answer_message=(draft.cannot_answer_message if draft else None) or None,
+            clarification_question=(draft.clarification_question if draft else None) or None,
             prompt=prompt,
             usage=usage,
         )

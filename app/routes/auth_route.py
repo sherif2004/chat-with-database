@@ -27,7 +27,17 @@ from app.services.auth_service import (
     normalize_email,
     verify_password,
 )
+from app.services.permissions import permissions_for
 from app.views.auth_view import Credentials, UserInfo
+
+
+def _info(user: User) -> UserInfo:
+    return UserInfo(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        permissions=sorted(permissions_for(user.role)),
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +98,7 @@ def signup(credentials: Credentials, request: Request, response: Response):
         logger.exception("Sign-up failed")
         raise HTTPException(status_code=503, detail="Couldn't create the account right now, please try again.")
 
-    return UserInfo(id=user.id, email=user.email)
+    return _info(user)
 
 
 @router.post("/login", response_model=UserInfo)
@@ -127,7 +137,7 @@ def login(credentials: Credentials, request: Request, response: Response):
         logger.exception("Could not create session")
         raise HTTPException(status_code=503, detail="Couldn't sign in right now, please try again.")
 
-    return UserInfo(id=user.id, email=user.email)
+    return _info(user)
 
 
 @router.post("/logout", status_code=204)
@@ -145,4 +155,4 @@ def logout(response: Response, session: str | None = Cookie(default=None, alias=
 
 @router.get("/me", response_model=UserInfo)
 def me(user: User = Depends(current_user)):
-    return UserInfo(id=user.id, email=user.email)
+    return _info(user)

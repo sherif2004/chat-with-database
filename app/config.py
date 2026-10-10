@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     max_question_length: int = 500
     max_rows: int = 100
+    # Most rows one confirmed admin change may touch; bigger ones are refused.
+    max_write_rows: int = 100
+    pending_change_ttl_seconds: int = 300
     statement_timeout_ms: int = 10000
 
     qdrant_url: str = "http://localhost:6333"
@@ -33,6 +36,9 @@ class Settings(BaseSettings):
     app_secret_key: str | None = None
     session_ttl_days: int = 14
     cookie_secure: bool = False
+    # Seeds (or promotes) this account as admin on startup. Both are needed.
+    admin_email: str | None = None
+    admin_password: str | None = None
     cors_origins: str = "http://localhost:5173"
 
     redis_url: str = "redis://localhost:6379/0"

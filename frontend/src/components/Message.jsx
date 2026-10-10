@@ -2,11 +2,53 @@ import { memo, useId, useState } from "react";
 import Icon from "./Icon";
 import MessageDetails, { formatMs } from "./MessageDetails";
 import ResultTable from "./ResultTable";
+import { confirmChange } from "../api";
 
 function answerText(response) {
   const result = response.result;
-  if (result.type === "message") return result.message;
+  if (result.type === "message" || result.type === "change") return result.message;
   return result.answer || "";
+}
+
+// An admin's previewed INSERT/UPDATE/DELETE. Nothing is saved until Confirm;
+// a change loaded from history has no token and can only be asked for again.
+function ChangePreview({ result }) {
+  const [state, setState] = useState({ phase: result.token ? "idle" : "stale" });
+
+  async function apply() {
+    setState({ phase: "working" });
+    try {
+      const done = await confirmChange(result.token);
+      setState({ phase: "done", message: done.message });
+    } catch (error) {
+      setState({ phase: "error", message: error.message });
+    }
+  }
+
+  return (
+    <>
+      <p dir="auto">{result.message}</p>
+      <pre className="change-sql"><code>{result.sql}</code></pre>
+
+      {state.phase === "idle" && (
+        <div className="change-actions">
+          <button type="button" className="text-button text-button-danger" onClick={apply}>
+            Confirm change
+          </button>
+          <button type="button" className="text-button" onClick={() => setState({ phase: "cancelled" })}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {state.phase === "working" && <p role="status">Applying…</p>}
+      {state.phase === "done" && <p role="status"><strong>{state.message}</strong></p>}
+      {state.phase === "cancelled" && <p role="status">Cancelled. Nothing was changed.</p>}
+      {state.phase === "stale" && (
+        <p role="status">This change isn't pending anymore. Ask again to redo it.</p>
+      )}
+      {state.phase === "error" && <p role="alert">{state.message}</p>}
+    </>
+  );
 }
 
 function Message({ role, question, response, error, fresh, isLast, onRegenerate, onEdit }) {
@@ -67,6 +109,8 @@ function Message({ role, question, response, error, fresh, isLast, onRegenerate,
                 />
               ))}
             </>
+          ) : result.type === "change" ? (
+            <ChangePreview result={result} />
           ) : (
             <p dir="auto">{result.message}</p>
           )}

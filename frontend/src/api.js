@@ -161,3 +161,43 @@ export function connectDatabase(databaseUrl, label) {
     "Connection failed"
   );
 }
+
+export function getUsers() {
+  return request("/admin/users", undefined, "Failed to load users");
+}
+
+export function setUserRole(userId, role) {
+  return request(
+    `/admin/users/${userId}/role`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    },
+    "Couldn't change the role"
+  );
+}
+
+export function deleteUser(userId) {
+  return request(`/admin/users/${userId}`, { method: "DELETE" }, "Couldn't delete the user");
+}
+
+export function getUserConversations(userId) {
+  return request(
+    `/admin/users/${userId}/conversations`,
+    undefined,
+    "Failed to load their chats"
+  );
+}
+
+export function getUserMessages(userId, conversationId) {
+  return request(
+    `/admin/users/${userId}/conversations/${conversationId}/messages`,
+    undefined,
+    "Failed to load the chat"
+  );
+}
+
+export function confirmChange(token) {
+  return postJson("/chat/confirm-change", { token }, "Couldn't apply the change");
+}

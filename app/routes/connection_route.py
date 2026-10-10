@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.dependencies import current_user, owner_key
+from app.dependencies import current_user, owner_key, require_permission
 from app.models.user_model import User
 from app.services.crypto_service import SecretKeyMissing
 from app.models.connection_model import (
@@ -30,7 +30,9 @@ def _to_connection_info(connection, error: str | None = None) -> ConnectionInfo:
 
 
 @router.post("/connections", response_model=ConnectionInfo, response_model_by_alias=True)
-def create_connection(request: ConnectRequest, user: User = Depends(current_user)):
+def create_connection(
+    request: ConnectRequest, user: User = Depends(require_permission("connection:write"))
+):
 
     try:
         connection = connect(owner_key(user), request.database_url, request.label)

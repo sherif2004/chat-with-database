@@ -50,3 +50,16 @@ def set_cached_response(session_id: str, question: str, response: dict) -> None:
         client.set(key, json.dumps(response), ex=settings.cache_ttl_seconds)
     except redis.RedisError as e:
         logger.warning("Could not cache response: %s", e)
+
+
+def clear_cached_responses(session_id: str | None = None) -> None:
+    """Drop cached answers after an admin changes data, so no one is served a
+    result computed from the old rows. None clears every user's."""
+
+    pattern = f"{_KEY_PREFIX}:{session_id}:*" if session_id else f"{_KEY_PREFIX}:*"
+
+    try:
+        for key in client.scan_iter(match=pattern, count=500):
+            client.delete(key)
+    except redis.RedisError as e:
+        logger.warning("Could not clear cached answers: %s", e)

@@ -33,9 +33,11 @@ Ask questions about a PostgreSQL database in plain language. Askbase turns each 
 
 **Your data**
 - Sign up and log in; every user has their own history and their own connected database.
-- Connect any PostgreSQL database from the UI. Its URL is stored encrypted.
+- Connect any PostgreSQL database from the UI (supervisors and admins). Its URL is stored encrypted.
+- Three roles (user, supervisor, admin) with their own privileges, and a Users panel for supervisors and admins.
 
 **Safety**
+- Admins can change data through chat, but only after a preview and an explicit confirmation (see [Admin data changes](#admin-data-changes)).
 - Prompt-injection input check, a SQL guard (one `SELECT`, known tables only), and read-only execution with a timeout and row cap.
 
 **Interface**
@@ -59,7 +61,7 @@ Every message goes through a LangGraph pipeline:
 1. **Input guard**: length limit and prompt-injection patterns.
 2. **Answer cache (Redis)**: the same question (ignoring case, punctuation and extra spaces) asked by the same user is answered from Redis with no model call and no SQL. The response has `cache_hit: true`.
 3. **Connection and history**: picks the user's database and loads the last 3 exchanges of the current conversation (in parallel), so follow-ups work.
-4. **Router**: a small model classifies the message as `greeting`, `data_question`, `off_topic` or `unsafe`. Only data questions continue.
+4. **Router**: a small model classifies the message as `greeting`, `data_question`, `off_topic` or `unsafe` (and `data_change` for admins, which takes the preview-and-confirm path described under Admin data changes). Only data questions continue.
 5. **Dynamic few-shot**: the question is embedded, and similar stored question and SQL pairs (from Qdrant) are added to the SQL prompt.
 6. **SQL guard**: parses the generated SQL: one `SELECT` only, known tables only, no `pg_*`, `dblink` or `set_config`-style functions.
 7. **Read-only execution with retry**: runs in a read-only transaction with a statement timeout and row cap. If Postgres rejects the query, the error is fed back to the model, for up to 3 attempts, before a "can't answer" message.
@@ -67,7 +69,7 @@ Every message goes through a LangGraph pipeline:
 
 For a new chat, a title is generated alongside steps 2 to 8, so it adds no waiting.
 
-A response `result` is either `{"type": "message", "message": "..."}` or `{"type": "table", "queries": [{"sql", "columns", "rows", "truncated"}, ...], "answer": "..."}`.
+A response `result` is either `{"type": "message", "message": "..."}` `{"type": "table", "queries": [{"sql", "columns", "rows", "truncated"}, ...], "answer": "..."}`, or, for an admin's change preview, `{"type": "change", "message", "sql", "affected_rows", "token"}`.
 
 ## Getting started
 
@@ -182,6 +184,30 @@ Sign-up and login are built in and stored in the same Postgres database, in the 
 - State-changing requests from an origin that is not in `CORS_ORIGINS` are rejected.
 - Chat history lives in `app.chat_history`, not in `public`, so it never leaks into the text-to-SQL schema.
 
+### Roles
+
+Every account has one role. Sign-up always creates a `user`; admins change roles from the **Users** panel (or `PATCH /admin/users/{id}/role`). The role is read from the database on every request, and changing it signs that user out.
+
+| Permission | user | supervisor | admin |
+|---|---|---|---|
+| Chat, manage own conversations | yes | yes | yes |
+| Connect a custom database | no (demo DB only) | yes | yes |
+| List accounts, read other users' chats (read-only) | no | yes | yes |
+| Change roles, delete accounts | no | no | yes |
+| Change data in the connected database (preview, then confirm) | no | no | yes |
+
+The role-to-permission map lives in `app/services/permissions.py`; routes ask for a permission with `require_permission("...")`. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` to create the first admin on startup. If that email already has an account, it is promoted, its password is replaced by `ADMIN_PASSWORD`, and its sessions end. The last admin can't be demoted or deleted, and you can't change or delete your own account.
+
+### Admin data changes
+
+Chat stays read-only for everyone. An admin can also ask for a change in plain language ("delete customer 12"). The model writes one `INSERT`, `UPDATE` or `DELETE`; a separate write guard accepts only a single such statement on known `public` tables (`UPDATE` and `DELETE` need a `WHERE`, and the `app` schema is off limits). The statement is then run inside a transaction that is rolled back, and the chat shows the exact SQL and how many rows it would touch. Nothing is saved until the admin clicks **Confirm change** (`POST /chat/confirm-change`).
+
+- The confirmation token is single-use, tied to that admin and expires after `PENDING_CHANGE_TTL_SECONDS` (300). The statement is re-validated, and the commit is refused if it touches a different number of rows than was shown.
+- A change may touch at most `MAX_WRITE_ROWS` rows (100).
+- Every committed change is recorded in `app.data_changes` (who, which database, the SQL, rows affected).
+- This works on the shared demo database too, so a change there is seen by every user. Cached answers are cleared after a change.
+- The connected database user must itself be allowed to write; the app cannot grant that.
+
 Not built yet: email verification and password reset.
 
 ## Conversations
@@ -199,18 +225,24 @@ All routes except sign-up and login need the session cookie.
 | `POST` | `/auth/signup` | Create an account and sign in |
 | `POST` | `/auth/login` | Sign in |
 | `POST` | `/auth/logout` | Sign out |
-| `GET` | `/auth/me` | The signed-in user |
+| `GET` | `/auth/me` | The signed-in user, with role and permissions |
 | `POST` | `/chat` | Ask a question and get the whole response |
 | `POST` | `/chat/stream` | Ask a question, with stage events |
+| `POST` | `/chat/confirm-change` | Apply a previewed data change (admin) |
 | `GET` | `/conversations` | List conversations |
 | `POST` | `/conversations` | Create an empty conversation |
 | `PATCH` | `/conversations/{id}` | Rename |
 | `DELETE` | `/conversations/{id}` | Delete, with its messages |
 | `GET` | `/conversations/{id}/messages` | Messages in a conversation |
 | `GET` | `/conversations/{id}/followups` | Suggested next questions |
-| `POST` | `/connections` | Connect your own PostgreSQL database |
+| `POST` | `/connections` | Connect your own PostgreSQL database (supervisor, admin) |
 | `GET` | `/connections/current` | The connected database and its schema |
 | `GET` | `/connections/starters` | Starter questions for the connected schema |
+| `GET` | `/admin/users` | List accounts (supervisor, admin) |
+| `PATCH` | `/admin/users/{id}/role` | Change a role (admin) |
+| `DELETE` | `/admin/users/{id}` | Delete an account and its data (admin) |
+| `GET` | `/admin/users/{id}/conversations` | A user's conversations, read-only (supervisor, admin) |
+| `GET` | `/admin/users/{id}/conversations/{cid}/messages` | Their messages, read-only (supervisor, admin) |
 
 Example (after logging in and keeping the cookie):
 
@@ -251,16 +283,18 @@ app/
                      execution, the Qdrant example store
   views/             request and response schemas
   controllers/       runs the graph and turns the final state into a response
-  routes/            endpoints: auth, chat, conversations, connections
+  routes/            endpoints: auth, chat, conversations, connections, admin
   services/          LLM calls and prompts, intent router, chat titles,
                      starter and follow-up suggestions, embeddings, few-shot
                      lookup, Redis cache, password hashing and rate limits,
-                     encryption of saved connection URLs
-  guardrails/        input check (prompt injection) and SQL check (read-only)
+                     encryption of saved connection URLs, role permissions,
+                     pending admin changes
+  guardrails/        input check (prompt injection), SQL check (read-only) and
+                     the admin write check
 frontend/
   src/               React app: App.jsx, api.js, theme.js and components
                      (conversation rail, composer, results table, progress,
-                     database drawer, appearance menu, sign-in screen)
+                     database drawer, users panel, appearance menu, sign-in screen)
   public/            favicon
 data/                Chinook demo CSVs
 docker/              docker-compose.yml: Qdrant and Redis

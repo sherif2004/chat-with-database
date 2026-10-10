@@ -5,12 +5,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.models.audit_model import ensure_audit_schema
 from app.models.connection_model import ensure_connections_schema, init_default_connection
 from app.models.history_model import ensure_chat_history_schema
-from app.models.user_model import ensure_users_schema
-from app.routes import auth_route, chat_route, connection_route, conversation_route
+from app.models.user_model import ensure_users_schema, seed_admin
+from app.routes import admin_route, auth_route, chat_route, connection_route, conversation_route
 from app.config import settings
 from app.services import example_service
+from app.services.auth_service import hash_password, is_valid_email, normalize_email
 
 logging.basicConfig(level=logging.INFO)
 for name in ("httpx", "httpx2"):
@@ -26,12 +28,27 @@ def _ensure_schema(ensure, label: str) -> None:
         logger.warning("%s storage is off: %s", label, e)
 
 
+def _seed_admin() -> None:
+    if not (settings.admin_email and settings.admin_password):
+        logger.warning("ADMIN_EMAIL / ADMIN_PASSWORD not set: no admin account is seeded.")
+        return
+
+    email = normalize_email(settings.admin_email)
+
+    if not is_valid_email(email):
+        raise ValueError("ADMIN_EMAIL is not a valid email address")
+
+    seed_admin(email, hash_password(settings.admin_password))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_default_connection()
     example_service.load_examples()
 
     _ensure_schema(ensure_users_schema, "Accounts")
+    _ensure_schema(_seed_admin, "Admin seed")
+    _ensure_schema(ensure_audit_schema, "Change log")
     _ensure_schema(ensure_chat_history_schema, "Chat history")
     _ensure_schema(ensure_connections_schema, "Saved connections")
 
@@ -66,6 +83,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin_route.router)
 app.include_router(auth_route.router)
 app.include_router(chat_route.router)
 app.include_router(connection_route.router)

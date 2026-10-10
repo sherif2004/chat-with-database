@@ -140,6 +140,7 @@ function Rail({
   onRename,
   onDelete,
   onSignOut,
+  onUsers,
 }) {
   const grouped = GROUPS.map((name) => ({
     name,
@@ -204,6 +205,12 @@ function Rail({
           <span className="sidebar-account-email" title={user.email}>
             {user.email}
           </span>
+          <span className="users-role" title="Your role">{user.role}</span>
+          {onUsers && (
+            <button type="button" className="sidebar-link-button" onClick={onUsers}>
+              Users
+            </button>
+          )}
           <AppearanceMenu />
           <button type="button" className="sidebar-link-button" onClick={onSignOut}>
             Sign out
