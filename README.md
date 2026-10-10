@@ -106,6 +106,8 @@ flowchart TD
 
 For a new chat, a title is generated alongside these steps, so it adds no waiting. After the response is sent, in the background, the exchange is saved, the response is cached, and a query that passed the guard and returned rows is stored as a few-shot example.
 
+> A standalone, offline version of this section, with the full diagram, the access gates and the RBAC checkpoints, is in [docs/pipeline.html](docs/pipeline.html). For every call in order, with all branches and the RBAC checks, see the [full sequence diagrams](docs/pipeline-diagram.html).
+
 ### What each step does
 
 | # | Step | What happens |

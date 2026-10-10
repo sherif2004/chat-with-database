@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Askbase pipeline</title>
+<style>
+:root{
+  color-scheme: light dark;
+  --bg: light-dark(#f5f5f7,#16171a);
+  --surface: light-dark(#ffffff,#1e1f23);
+  --alt: light-dark(#f7f8fa,#232428);
+  --border: light-dark(#e3e4e8,#302f34);
+  --border-strong: light-dark(#858b97,#6f727c);
+  --text: light-dark(#1c1e21,#eceef1);
+  --muted: light-dark(#5d6573,#9799a1);
+  --accent: light-dark(#0066d6,#3b9cff);
+  --fill: light-dark(#0066d6,#0a6fe0);
+  --ok: light-dark(#1b8a5a,#4cd09a);
+  --warn: light-dark(#a8480a,#fdba74);
+  --bad: light-dark(#b3261e,#ff9a92);
+  --code-bg: light-dark(#eef0f4,#2a2b30);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:20px}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+::selection{background:color-mix(in srgb,var(--accent) 28%,transparent)}
+.layout{display:grid;grid-template-columns:240px minmax(0,1fr);max-width:1180px;margin:0 auto;gap:48px;padding:32px 24px 80px}
+nav.toc{position:sticky;top:24px;align-self:start;max-height:calc(100vh - 48px);overflow:auto;font-size:.9rem}
+nav.toc strong{display:block;margin-bottom:8px}
+nav.toc ol{list-style:none;margin:0;padding:0}
+nav.toc li{margin:2px 0}
+nav.toc a{display:block;padding:4px 10px;border-radius:8px;color:var(--muted);text-decoration:none}
+nav.toc a:hover{background:var(--surface);color:var(--text)}
+nav.toc .sub a{padding-left:24px;font-size:.85rem}
+main{min-width:0}
+h1{font-size:2rem;line-height:1.2;margin:0 0 8px;letter-spacing:-.02em}
+h2{font-size:1.45rem;margin:56px 0 12px;letter-spacing:-.01em}
+h3{font-size:1.1rem;margin:32px 0 8px}
+p{margin:0 0 12px;max-width:72ch}
+.lede{color:var(--muted);font-size:1.05rem;max-width:62ch}
+ul,ol{padding-left:22px;margin:0 0 12px;max-width:80ch}
+li{margin:4px 0}
+code{font:.88em ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code-bg);padding:1px 6px;border-radius:5px}
+pre{background:var(--code-bg);padding:12px 14px;border-radius:10px;overflow:auto;font:.85rem/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+pre code{background:none;padding:0}
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);margin:12px 0 20px}
+table{border-collapse:collapse;width:100%;font-size:.92rem;min-width:560px}
+th,td{padding:10px 14px;text-align:left;vertical-align:top}
+th{background:var(--alt);color:var(--muted);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--border)}
+tbody tr+tr td{border-top:1px solid var(--border)}
+td:first-child{font-weight:500}
+.diagram{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:12px;margin:16px 0 8px;overflow-x:auto}
+.diagram svg{display:block;width:100%;min-width:640px;height:auto;max-width:960px;margin:0 auto}
+.node rect{fill:var(--alt);stroke:var(--border-strong);stroke-width:1}
+.node.exit rect{fill:var(--surface);stroke:var(--border);stroke-dasharray:4 3}
+.node.gate rect:first-child{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
+.node.gate .num{fill:var(--accent)}
+.node .badge{fill:var(--fill);stroke:none}
+.badget{fill:#fff;font:700 10px system-ui,sans-serif;letter-spacing:.04em}
+.node.final rect{fill:var(--fill);stroke:none}
+.node.final .lbl{fill:#fff}
+.num{fill:var(--fill)} .numt{fill:#fff;font:600 12px system-ui,sans-serif}
+.lbl{fill:var(--text);font:500 14px system-ui,sans-serif}
+.why{fill:var(--muted);font:12px system-ui,sans-serif}
+.arrow{fill:none;stroke:var(--border-strong);stroke-width:1.5}
+.arrow.dim{stroke:var(--muted)}
+.arrow.loop{stroke:var(--accent);stroke-width:1.75}
+.head{fill:var(--border-strong)}
+.caption{color:var(--muted);font-size:.88rem;margin:0 0 8px}
+.step{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:6px 20px 14px;margin:16px 0}
+.step h3{margin:14px 0 6px;display:flex;align-items:center;gap:12px}
+.step h3 .n{flex:none;display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--fill);color:#fff;font-size:.85rem;font-weight:600}
+.meta{color:var(--muted);font-size:.88rem;margin:-2px 0 10px}
+.step .table-wrap{margin:8px 0 6px}
+.tag{display:inline-block;padding:0 8px;border-radius:999px;font-size:.78rem;font-weight:600;background:var(--code-bg);color:var(--muted);white-space:nowrap}
+.tag.ok{color:var(--ok)} .tag.warn{color:var(--warn)} .tag.bad{color:var(--bad)}
+.note{border:1px solid var(--border);border-radius:12px;background:var(--alt);padding:12px 16px;margin:16px 0}
+.note p:last-child{margin:0}
+@media (max-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr);gap:16px;padding:20px 16px 64px}
+  nav.toc{position:static;max-height:none}
+  nav.toc ol{columns:2}
+}
+@media (max-width:640px){
+  table{min-width:0}
+  th,td{padding:9px 10px}
+  .step{padding:4px 14px 12px}
+  .diagram svg{min-width:640px}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@media print{nav.toc{display:none}.layout{display:block}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+<strong>Askbase pipeline</strong>
+<ol>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#rbac">Access control (RBAC)</a></li>
+<li><a href="#before">0. Before the graph</a></li>
+<li><a href="#graph">1. The graph, step by step</a></li>
+<li class="sub"><a href="#s1">1 Input guard</a></li>
+<li class="sub"><a href="#s2">2 Answer cache</a></li>
+<li class="sub"><a href="#s3">3 Connection and history</a></li>
+<li class="sub"><a href="#s4">4 Router</a></li>
+<li class="sub"><a href="#s5">5 Few-shot lookup</a></li>
+<li class="sub"><a href="#s6">6 Generate SQL</a></li>
+<li class="sub"><a href="#s7">7 SQL guard</a></li>
+<li class="sub"><a href="#s8">8 Execution and retry</a></li>
+<li class="sub"><a href="#s9">9 Write the answer</a></li>
+<li><a href="#admin">2. Admin data changes</a></li>
+<li><a href="#after">3. After the graph</a></li>
+<li><a href="#stream">4. Streaming</a></li>
+<li><a href="#outcomes">5. Every outcome</a></li>
+<li><a href="#down">6. When something is down</a></li>
+<li><a href="#quirks">7. Things to know</a></li>
+</ol>
+</nav>
+
+<main>
+<h1>How the Askbase pipeline works</h1>
+<p class="lede">What happens to one question, step by step, and what each possible outcome looks like. Everything here is taken from the code in <code>app/graphs</code>, <code>app/controllers</code> and <code>app/routes</code>.</p>
+
+<h2 id="overview">Overview</h2>
+<p>Every chat request first passes four access gates (A to D), then goes through one LangGraph graph of nine steps. Most steps can end the run early with a message. Solid arrows go to the next step, dashed arrows leave the main path, and the blue loop is the SQL retry.</p>
+<div class="diagram"><svg viewBox="0 0 960 934" role="img" aria-label="Full pipeline: four access gates (origin, session, role, conversation ownership), then the nine steps, with exits, the SQL retry loop, and the admin data-change branch."><defs><marker id="a6287" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><g class="node gate"><rect x="70" y="20" width="300" height="44" rx="10"/><circle cx="92" cy="42.0" r="12" class="num"/><text x="92" y="46.0" text-anchor="middle" class="numt">A</text><text x="116" y="47.0" class="lbl">Origin check</text></g><path d="M220.0 64 V86" class="arrow" marker-end="url(#a6287)"/><path d="M370 42.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="34.0" text-anchor="middle" class="why">Origin not in CORS_ORIGINS</text><g class="node exit"><rect x="600" y="20" width="330" height="44" rx="10"/><text x="616" y="47.0" class="lbl">403 cross-site request</text></g><g class="node gate"><rect x="70" y="86" width="300" height="44" rx="10"/><circle cx="92" cy="108.0" r="12" class="num"/><text x="92" y="112.0" text-anchor="middle" class="numt">B</text><text x="116" y="113.0" class="lbl">Session cookie</text></g><path d="M220.0 130 V152" class="arrow" marker-end="url(#a6287)"/><path d="M370 108.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="100.0" text-anchor="middle" class="why">no valid session</text><g class="node exit"><rect x="600" y="86" width="330" height="44" rx="10"/><text x="616" y="113.0" class="lbl">401 please sign in</text></g><g class="node gate"><rect x="70" y="152" width="300" height="44" rx="10"/><circle cx="92" cy="174.0" r="12" class="num"/><text x="92" y="178.0" text-anchor="middle" class="numt">C</text><text x="116" y="179.0" class="lbl">Role from DB, can_write</text><rect x="312" y="164.0" width="48" height="20" rx="10" class="badge"/><text x="336" y="178.0" text-anchor="middle" class="badget">RBAC</text></g><path d="M220.0 196 V218" class="arrow" marker-end="url(#a6287)"/><g class="node gate"><rect x="70" y="218" width="300" height="44" rx="10"/><circle cx="92" cy="240.0" r="12" class="num"/><text x="92" y="244.0" text-anchor="middle" class="numt">D</text><text x="116" y="245.0" class="lbl">Conversation ownership</text></g><path d="M220.0 262 V284" class="arrow" marker-end="url(#a6287)"/><path d="M370 240.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="232.0" text-anchor="middle" class="why">not your conversation</text><g class="node exit"><rect x="600" y="218" width="330" height="44" rx="10"/><text x="616" y="245.0" class="lbl">404 not found</text></g><g class="node"><rect x="70" y="284" width="300" height="44" rx="10"/><circle cx="92" cy="306.0" r="12" class="num"/><text x="92" y="310.0" text-anchor="middle" class="numt">1</text><text x="116" y="311.0" class="lbl">Input guard</text></g><path d="M220.0 328 V350" class="arrow" marker-end="url(#a6287)"/><path d="M370 306.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="298.0" text-anchor="middle" class="why">empty, too long, injection</text><g class="node exit"><rect x="600" y="284" width="330" height="44" rx="10"/><text x="616" y="311.0" class="lbl">Refusal message</text></g><g class="node"><rect x="70" y="350" width="300" height="44" rx="10"/><circle cx="92" cy="372.0" r="12" class="num"/><text x="92" y="376.0" text-anchor="middle" class="numt">2</text><text x="116" y="377.0" class="lbl">Answer cache</text></g><path d="M220.0 394 V416" class="arrow" marker-end="url(#a6287)"/><path d="M370 372.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="364.0" text-anchor="middle" class="why">hit</text><g class="node exit"><rect x="600" y="350" width="330" height="44" rx="10"/><text x="616" y="377.0" class="lbl">Cached response</text></g><g class="node"><rect x="70" y="416" width="300" height="44" rx="10"/><circle cx="92" cy="438.0" r="12" class="num"/><text x="92" y="442.0" text-anchor="middle" class="numt">3</text><text x="116" y="443.0" class="lbl">Connection + history</text></g><path d="M220.0 460 V482" class="arrow" marker-end="url(#a6287)"/><path d="M370 438.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="430.0" text-anchor="middle" class="why">database unreachable</text><g class="node exit"><rect x="600" y="416" width="330" height="44" rx="10"/><text x="616" y="443.0" class="lbl">Connection error message</text></g><g class="node"><rect x="70" y="482" width="300" height="44" rx="10"/><circle cx="92" cy="504.0" r="12" class="num"/><text x="92" y="508.0" text-anchor="middle" class="numt">4</text><text x="116" y="509.0" class="lbl">Router (cheap model)</text><rect x="312" y="494.0" width="48" height="20" rx="10" class="badge"/><text x="336" y="508.0" text-anchor="middle" class="badget">RBAC</text></g><path d="M220.0 526 V548" class="arrow" marker-end="url(#a6287)"/><path d="M370 504.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="496.0" text-anchor="middle" class="why">greeting, off topic, unsafe</text><g class="node exit"><rect x="600" y="482" width="330" height="44" rx="10"/><text x="616" y="509.0" class="lbl">Reply message</text></g><g class="node"><rect x="70" y="548" width="300" height="44" rx="10"/><circle cx="92" cy="570.0" r="12" class="num"/><text x="92" y="574.0" text-anchor="middle" class="numt">5</text><text x="116" y="575.0" class="lbl">Few-shot lookup</text></g><path d="M220.0 592 V614" class="arrow" marker-end="url(#a6287)"/><g class="node"><rect x="70" y="614" width="300" height="44" rx="10"/><circle cx="92" cy="636.0" r="12" class="num"/><text x="92" y="640.0" text-anchor="middle" class="numt">6</text><text x="116" y="641.0" class="lbl">Generate SQL</text></g><path d="M220.0 658 V680" class="arrow" marker-end="url(#a6287)"/><path d="M370 636.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="628.0" text-anchor="middle" class="why">model says so</text><g class="node exit"><rect x="600" y="614" width="330" height="44" rx="10"/><text x="616" y="641.0" class="lbl">Clarification / cannot answer</text></g><g class="node"><rect x="70" y="680" width="300" height="44" rx="10"/><circle cx="92" cy="702.0" r="12" class="num"/><text x="92" y="706.0" text-anchor="middle" class="numt">7</text><text x="116" y="707.0" class="lbl">SQL guard</text></g><path d="M220.0 724 V746" class="arrow" marker-end="url(#a6287)"/><path d="M370 702.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="694.0" text-anchor="middle" class="why">not a safe SELECT</text><g class="node exit"><rect x="600" y="680" width="330" height="44" rx="10"/><text x="616" y="707.0" class="lbl">Refusal message</text></g><g class="node"><rect x="70" y="746" width="300" height="44" rx="10"/><circle cx="92" cy="768.0" r="12" class="num"/><text x="92" y="772.0" text-anchor="middle" class="numt">8</text><text x="116" y="773.0" class="lbl">Read-only execution</text></g><path d="M220.0 790 V812" class="arrow" marker-end="url(#a6287)"/><path d="M370 768.0 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="485.0" y="760.0" text-anchor="middle" class="why">3 failed attempts</text><g class="node exit"><rect x="600" y="746" width="330" height="44" rx="10"/><text x="616" y="773.0" class="lbl">Cannot answer message</text></g><g class="node"><rect x="70" y="812" width="300" height="44" rx="10"/><circle cx="92" cy="834.0" r="12" class="num"/><text x="92" y="838.0" text-anchor="middle" class="numt">9</text><text x="116" y="839.0" class="lbl">Write the answer</text></g><path d="M70 768.0 H34 V636.0 H70" class="arrow loop" marker-end="url(#a6287)"/><text x="28" y="702.0" class="why" transform="rotate(-90 28 702.0)" text-anchor="middle">database error, up to 3 tries</text><path d="M370 518 H480 V556 H600" class="arrow dim" marker-end="url(#a6287)"/><text x="490" y="548" class="why">data_change, admin only</text><g class="node exit"><rect x="600" y="534" width="330" height="44" rx="10"/><text x="616" y="561" class="lbl">Admin data change (diagram below)</text></g><g class="node final"><rect x="70" y="872" width="300" height="36" rx="18"/><text x="220.0" y="895" text-anchor="middle" class="lbl">Response</text></g></svg></div>
+<p class="caption"><strong>Want every call in order?</strong> <a href="pipeline-diagram.html">Open the full sequence diagrams</a> (browser, gates, pipeline, models, Redis, Qdrant and both databases, with every branch). Steps A to D are the access gates every chat request passes before the graph. <span class="tag">RBAC</span> marks where the role matters. Admins also have a tenth path: from the router, a data-change request leaves the read pipeline (<a href="#admin">section 2</a>).</p>
+
+
+<h2 id="rbac">Access control (RBAC)</h2>
+<p>Roles are enforced <strong>in the application code</strong>, in layers. Postgres only stores the role as data (a <code>role</code> column limited to <code>user</code>, <code>supervisor</code> and <code>admin</code>). The backend is the authority. The interface only hides what a role cannot use.</p>
+
+<h3>The layers, in the order a request meets them</h3>
+<ol>
+<li><strong>Origin check</strong> (<code>app/main.py</code>). Blocks cross-site writes.</li>
+<li><strong>Session</strong> (<code>current_user</code> in <code>app/dependencies.py</code>). The cookie is turned into a user. <strong>The role is read from the database on every request</strong>, so a promotion or demotion applies at once.</li>
+<li><strong>Route permission</strong> (<code>require_permission("...")</code> in <code>app/dependencies.py</code>). The route names a permission, and <code>has_permission(role, permission)</code> decides. A miss returns 403.</li>
+<li><strong>Checks inside the chat pipeline.</strong> The chat routes pass <code>can_write</code> (true only with <code>data:write</code>) into the graph. It changes what the router prompt offers, and the router node <strong>re-checks it in code</strong> so a stray model answer cannot open the write path.</li>
+<li><strong>Confirm step</strong> (<code>POST /chat/confirm-change</code>). Requires <code>data:write</code> again, and the one-time token must belong to the same admin.</li>
+<li><strong>Interface</strong> (<code>frontend/src/permissions.js</code>, <code>can()</code>). Hides the Users and Activity pages, the connect form and the admin controls. Not a security boundary.</li>
+</ol>
+
+<h3>Where each permission is enforced</h3>
+<div class="table-wrap"><table><thead><tr><th>Permission</th><th>user</th><th>supervisor</th><th>admin</th><th>Enforced in</th></tr></thead><tbody>
+<tr><td><code>chat</code>, <code>conversation:own</code></td><td>yes</td><td>yes</td><td>yes</td><td>Defined in the map, but <strong>no route checks them</strong>. Every signed-in account can chat and manage its own conversations, because those routes only require a session. Ownership is enforced by the <code>u:&lt;id&gt;</code> key.</td></tr>
+<tr><td><code>connection:write</code></td><td>no</td><td>yes</td><td>yes</td><td><code>POST /connections</code> in <code>connection_route.py</code>. The interface hides the connect form.</td></tr>
+<tr><td><code>conversation:read_any</code></td><td>no</td><td>yes</td><td>yes</td><td><code>GET /admin/users/{id}/conversations</code> and <code>.../messages</code> in <code>admin_route.py</code>. Read-only, and every view is logged.</td></tr>
+<tr><td><code>users:read</code></td><td>no</td><td>yes</td><td>yes</td><td><code>GET /admin/users</code>. The interface shows the Users page.</td></tr>
+<tr><td><code>users:write</code></td><td>no</td><td>no</td><td>yes</td><td><code>PATCH /admin/users/{id}/role</code> and <code>DELETE /admin/users/{id}</code>. You cannot change or delete yourself, the last admin cannot be demoted or deleted, and a role change ends that user's sessions.</td></tr>
+<tr><td><code>activity:read</code></td><td>no</td><td>no</td><td>yes</td><td><code>GET /admin/activity</code> and <code>/admin/activity/summary</code>. The interface shows the Activity page.</td></tr>
+<tr><td><code>data:write</code></td><td>no</td><td>no</td><td>yes</td><td>Three places: the chat routes set <code>can_write</code>, the router node re-checks it (<code>chat_graph.py</code>), and <code>POST /chat/confirm-change</code> requires it.</td></tr>
+</tbody></table></div>
+
+<h3>Related rules</h3>
+<ul>
+<li><strong>Sign-up always creates a <code>user</code>.</strong> The role is never read from the request body.</li>
+<li><strong>The first admin</strong> comes from <code>ADMIN_EMAIL</code> and <code>ADMIN_PASSWORD</code> at startup. If that email already has an account, it is promoted, its password is replaced and its sessions end.</li>
+<li><strong>Role map:</strong> <code>app/services/permissions.py</code> is the single source of truth. Nothing else should compare role names.</li>
+<li><strong>What the database enforces:</strong> chat queries run in a read-only transaction, so even a write that slipped past the guard would be rejected. The app still connects with one database login for reads and writes, so a leaked <code>DATABASE_URL</code> would bypass every role.</li>
+</ul>
+
+<h2 id="before">0. Before the graph runs</h2>
+<p>This is the HTTP layer for <code>POST /chat</code> and <code>POST /chat/stream</code>.</p>
+<ol>
+<li><strong>Cross-site check.</strong> A write request whose <code>Origin</code> is not in <code>CORS_ORIGINS</code> gets <span class="tag bad">403</span>. Requests with no <code>Origin</code> (curl) pass.</li>
+<li><strong>Session.</strong> The session cookie identifies you. No valid session gives <span class="tag bad">401</span>. Your key is <code>u:&lt;id&gt;</code>, and <code>can_write</code> is true only for admins.</li>
+<li><strong>Conversation.</strong> With no <code>conversation_id</code> a conversation is created now, with a placeholder title cut from the question, even if the question is later refused. With an id, it must be yours, otherwise <span class="tag bad">404</span>. If <code>replace_last</code> is set (regenerate or edit), the newest exchange is deleted first.</li>
+<li><strong>Title.</strong> If the chat still has a placeholder title, a thread asks the cheap model for a better one, in parallel with everything else.</li>
+<li><strong>Run.</strong> The graph starts with the question, your key, the conversation, <code>skip_cache = replace_last</code> and <code>can_write</code>.</li>
+</ol>
+
+<h2 id="graph">1. The graph, step by step</h2>
+
+<section class="step" id="s1">
+<h3><span class="n">1</span>Input guard</h3>
+<p class="meta">No model call.</p>
+<div class="table-wrap"><table><thead><tr><th>Situation</th><th>Result</th></tr></thead><tbody>
+<tr><td>Empty after trimming</td><td><code>unsafe</code> message: "The question is empty."</td></tr>
+<tr><td>Longer than <code>MAX_QUESTION_LENGTH</code> (500)</td><td><code>unsafe</code> message: too long</td></tr>
+<tr><td>Matches an injection pattern ("ignore previous instructions", "you are now…", <code>&lt;system&gt;</code>, "developer mode"…)</td><td><code>unsafe</code> message: "looks like an attempt to change my instructions"</td></tr>
+<tr><td>Otherwise</td><td>Continues with the trimmed question</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="step" id="s2">
+<h3><span class="n">2</span>Answer cache</h3>
+<p class="meta">Redis. No model call.</p>
+<ul>
+<li>The key is <code>chat_cache:u:&lt;id&gt;:&lt;normalized question&gt;</code>. Normalizing lowercases, drops punctuation and collapses spaces.</li>
+<li><strong>Skipped</strong> when <code>replace_last</code> is set.</li>
+<li><strong>Hit:</strong> the stored response is returned with <code>cache_hit: true</code> and nothing else runs. It is still saved to history.</li>
+<li><strong>Miss, Redis down, or an unparseable entry:</strong> treated as a miss, and the pipeline continues.</li>
+</ul>
+</section>
+
+<section class="step" id="s3">
+<h3><span class="n">3</span>Connection and history</h3>
+<p class="meta">Two branches run in parallel and join before the router.</p>
+<ul>
+<li><strong>Resolve connection.</strong> In order: in-memory cache, the "no saved connection" list (default database), the saved encrypted URL (decrypt, connect, read the schema), then the default database. If <code>APP_SECRET_KEY</code> is missing the saved URL is ignored. If the saved database is unreachable, the result is a <code>connection_error</code> message and the pipeline <strong>stops</strong>.</li>
+<li><strong>Load history.</strong> The last 3 exchanges of this conversation, with each answer and the SQL used. This is what makes follow-ups like "just for Iron Maiden" work.</li>
+</ul>
+</section>
+
+<section class="step" id="s4">
+<h3><span class="n">4</span>Router</h3>
+<p class="meta">Cheap model. Input: the question, the schema and the history. For admins the prompt also offers <code>data_change</code>.</p>
+<div class="table-wrap"><table><thead><tr><th>Model says</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>greeting</code>, <code>off_topic</code>, <code>unsafe</code></td><td>A short reply in the question's language, then stop</td></tr>
+<tr><td><code>data_change</code>, you are <strong>not</strong> an admin</td><td>Re-checked in code and turned into <code>unsafe</code>: "I can only answer read-only questions"</td></tr>
+<tr><td><code>data_change</code>, admin</td><td>Goes to <a href="#admin">the admin path</a></td></tr>
+<tr><td><code>data_question</code></td><td>Continues to step 5</td></tr>
+<tr><td>Unusable output</td><td>Fails closed to <code>off_topic</code></td></tr>
+</tbody></table></div>
+</section>
+
+<section class="step" id="s5">
+<h3><span class="n">5</span>Few-shot lookup</h3>
+<p class="meta">Embedding model and Qdrant.</p>
+<p>Embeds the question and fetches stored question and SQL pairs with similarity of at least <code>FEW_SHOT_MIN_SCORE</code> (0.6). If Qdrant or the embedding call is down, or the store is not ready, the run continues with <strong>no examples</strong>.</p>
+</section>
+
+<section class="step" id="s6">
+<h3><span class="n">6</span>Generate SQL</h3>
+<p class="meta">Capable model. The prompt holds the schema, the examples, the history and, on a retry, the previous SQL with its database error.</p>
+<div class="table-wrap"><table><thead><tr><th>Model says</th><th>Result</th></tr></thead><tbody>
+<tr><td>It needs clarification</td><td><code>needs_clarification</code> message with its question, then stop</td></tr>
+<tr><td>The schema cannot answer it</td><td><code>off_topic</code> message ("the data doesn't contain…"), then stop</td></tr>
+<tr><td>SQL</td><td>Continues</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="step" id="s7">
+<h3><span class="n">7</span>SQL guard</h3>
+<p class="meta">sqlglot parser. No model call.</p>
+<ul>
+<li>The SQL must parse, with 1 to 5 statements.</li>
+<li>Each must be a pure query: a <code>SELECT</code>, a <code>UNION</code>, or a <code>WITH</code> that ends in a <code>SELECT</code>. Any <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>DROP</code>, <code>CREATE</code>, <code>ALTER</code>, <code>COPY</code>, <code>SET</code>, <code>GRANT</code> or transaction control is forbidden.</li>
+<li>Tables must be known tables in <code>public</code>. CTE names are allowed.</li>
+<li>Functions starting <code>pg_</code>, <code>lo_</code> or <code>dblink</code>, plus <code>set_config</code>, <code>current_setting</code>, <code>version</code>, <code>nextval</code>, <code>setval</code>, <code>currval</code> and a few XML ones, are forbidden.</li>
+</ul>
+<div class="table-wrap"><table><thead><tr><th>Situation</th><th>Result</th></tr></thead><tbody>
+<tr><td>Unknown table</td><td><code>off_topic</code> "can't answer" message, then stop</td></tr>
+<tr><td>Anything else rejected, or unparseable</td><td><code>unsafe</code> message with the reason, then stop</td></tr>
+<tr><td>Passes</td><td>Continues with the normalized statements</td></tr>
+</tbody></table></div>
+<p>A guard rejection is <strong>not</strong> retried.</p>
+</section>
+
+<section class="step" id="s8">
+<h3><span class="n">8</span>Execution with retry</h3>
+<p class="meta">Read-only. No model call unless it retries.</p>
+<ul>
+<li>Each statement runs in a <strong>read-only transaction</strong> with <code>statement_timeout</code> (10 s), fetching at most <code>MAX_ROWS + 1</code> rows (100 plus one). The extra row only sets <code>truncated</code>.</li>
+<li>If a pooled connection had dropped, it retries once.</li>
+<li><strong>The database rejects it</strong> (bad column, timeout, anything): the error is saved, the counter goes up, and the flow goes <strong>back to step 6</strong> with the failed SQL and the error. The new SQL passes the guard again. Retrieval is not redone.</li>
+<li>After 3 failed attempts: an <code>off_topic</code> "I couldn't answer that" message, then stop.</li>
+<li>If any statement fails, the whole attempt is retried.</li>
+</ul>
+</section>
+
+<section class="step" id="s9">
+<h3><span class="n">9</span>Write the answer</h3>
+<p class="meta">Capable model.</p>
+<p>It sees the SQL and the first 20 rows of each query, plus the total row count. It must answer in the question's language and only from the results. The response carries every query's full rows (up to 100), the SQL, and one answer sentence. The intent is <code>data_question</code>.</p>
+</section>
+
+<h2 id="admin">2. Admin data changes</h2>
+<p>Reached only from step 4, when you are an admin and the router says <code>data_change</code>. The whole path, including the confirm call, with its three RBAC checks:</p>
+<div class="diagram"><svg viewBox="0 0 960 802" role="img" aria-label="Admin data-change path: router check, write SQL, guard, dry run, preview with token, then confirm with permission, token and owner checks before commit."><defs><marker id="a4900" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker></defs><g class="node"><rect x="70" y="20" width="300" height="44" rx="10"/><circle cx="92" cy="42.0" r="12" class="num"/><text x="92" y="46.0" text-anchor="middle" class="numt">1</text><text x="116" y="47.0" class="lbl">Router returns data_change</text><rect x="312" y="32.0" width="48" height="20" rx="10" class="badge"/><text x="336" y="46.0" text-anchor="middle" class="badget">RBAC</text></g><path d="M220.0 64 V86" class="arrow" marker-end="url(#a4900)"/><path d="M370 42.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="34.0" text-anchor="middle" class="why">not an admin (can_write false)</text><g class="node exit"><rect x="600" y="20" width="330" height="44" rx="10"/><text x="616" y="47.0" class="lbl">Reply: read-only only</text></g><g class="node"><rect x="70" y="86" width="300" height="44" rx="10"/><circle cx="92" cy="108.0" r="12" class="num"/><text x="92" y="112.0" text-anchor="middle" class="numt">2</text><text x="116" y="113.0" class="lbl">Generate write SQL (capable model)</text></g><path d="M220.0 130 V152" class="arrow" marker-end="url(#a4900)"/><path d="M370 108.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="100.0" text-anchor="middle" class="why">model says so</text><g class="node exit"><rect x="600" y="86" width="330" height="44" rx="10"/><text x="616" y="113.0" class="lbl">Clarification / cannot answer</text></g><g class="node"><rect x="70" y="152" width="300" height="44" rx="10"/><circle cx="92" cy="174.0" r="12" class="num"/><text x="92" y="178.0" text-anchor="middle" class="numt">3</text><text x="116" y="179.0" class="lbl">Write guard</text></g><path d="M220.0 196 V218" class="arrow" marker-end="url(#a4900)"/><path d="M370 174.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="166.0" text-anchor="middle" class="why">not one safe INSERT/UPDATE/DELETE</text><g class="node exit"><rect x="600" y="152" width="330" height="44" rx="10"/><text x="616" y="179.0" class="lbl">Refusal message</text></g><g class="node"><rect x="70" y="218" width="300" height="44" rx="10"/><circle cx="92" cy="240.0" r="12" class="num"/><text x="92" y="244.0" text-anchor="middle" class="numt">4</text><text x="116" y="245.0" class="lbl">Dry run, always rolled back</text></g><path d="M220.0 262 V284" class="arrow" marker-end="url(#a4900)"/><path d="M370 240.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="232.0" text-anchor="middle" class="why">error, 0 rows, or over 100 rows</text><g class="node exit"><rect x="600" y="218" width="330" height="44" rx="10"/><text x="616" y="245.0" class="lbl">off_topic / unsafe message</text></g><g class="node"><rect x="70" y="284" width="300" height="44" rx="10"/><circle cx="92" cy="306.0" r="12" class="num"/><text x="92" y="310.0" text-anchor="middle" class="numt">5</text><text x="116" y="311.0" class="lbl">Preview + one-time token (300 s)</text></g><path d="M220.0 328 V350" class="arrow" marker-end="url(#a4900)"/><g class="node gate"><rect x="70" y="350" width="300" height="44" rx="10"/><circle cx="92" cy="372.0" r="12" class="num"/><text x="92" y="376.0" text-anchor="middle" class="numt">6</text><text x="116" y="377.0" class="lbl">Admin clicks Confirm</text></g><path d="M220.0 394 V416" class="arrow" marker-end="url(#a4900)"/><g class="node gate"><rect x="70" y="416" width="300" height="44" rx="10"/><circle cx="92" cy="438.0" r="12" class="num"/><text x="92" y="442.0" text-anchor="middle" class="numt">7</text><text x="116" y="443.0" class="lbl">POST /chat/confirm-change</text><rect x="312" y="428.0" width="48" height="20" rx="10" class="badge"/><text x="336" y="442.0" text-anchor="middle" class="badget">RBAC</text></g><path d="M220.0 460 V482" class="arrow" marker-end="url(#a4900)"/><path d="M370 438.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="430.0" text-anchor="middle" class="why">role lacks data:write</text><g class="node exit"><rect x="600" y="416" width="330" height="44" rx="10"/><text x="616" y="443.0" class="lbl">403 forbidden</text></g><g class="node"><rect x="70" y="482" width="300" height="44" rx="10"/><circle cx="92" cy="504.0" r="12" class="num"/><text x="92" y="508.0" text-anchor="middle" class="numt">8</text><text x="116" y="509.0" class="lbl">Take the token (single use)</text></g><path d="M220.0 526 V548" class="arrow" marker-end="url(#a4900)"/><path d="M370 504.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="496.0" text-anchor="middle" class="why">unknown token</text><g class="node exit"><rect x="600" y="482" width="330" height="44" rx="10"/><text x="616" y="509.0" class="lbl">410 expired or used</text></g><g class="node"><rect x="70" y="548" width="300" height="44" rx="10"/><circle cx="92" cy="570.0" r="12" class="num"/><text x="92" y="574.0" text-anchor="middle" class="numt">9</text><text x="116" y="575.0" class="lbl">Token belongs to this admin</text><rect x="312" y="560.0" width="48" height="20" rx="10" class="badge"/><text x="336" y="574.0" text-anchor="middle" class="badget">RBAC</text></g><path d="M220.0 592 V614" class="arrow" marker-end="url(#a4900)"/><path d="M370 570.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="562.0" text-anchor="middle" class="why">different owner</text><g class="node exit"><rect x="600" y="548" width="330" height="44" rx="10"/><text x="616" y="575.0" class="lbl">403 another account</text></g><g class="node"><rect x="70" y="614" width="300" height="44" rx="10"/><circle cx="92" cy="636.0" r="12" class="num"/><text x="92" y="640.0" text-anchor="middle" class="numt">10</text><text x="116" y="641.0" class="lbl">Same database as the preview</text></g><path d="M220.0 658 V680" class="arrow" marker-end="url(#a4900)"/><path d="M370 636.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="628.0" text-anchor="middle" class="why">label differs</text><g class="node exit"><rect x="600" y="614" width="330" height="44" rx="10"/><text x="616" y="641.0" class="lbl">409 database changed</text></g><g class="node"><rect x="70" y="680" width="300" height="44" rx="10"/><circle cx="92" cy="702.0" r="12" class="num"/><text x="92" y="706.0" text-anchor="middle" class="numt">11</text><text x="116" y="707.0" class="lbl">Re-validate and commit</text></g><path d="M370 702.0 H600" class="arrow dim" marker-end="url(#a4900)"/><text x="485.0" y="694.0" text-anchor="middle" class="why">row count differs, or DB error</text><g class="node exit"><rect x="600" y="680" width="330" height="44" rx="10"/><text x="616" y="707.0" class="lbl">409 / 400 nothing saved</text></g><g class="node final"><rect x="70" y="740" width="300" height="36" rx="18"/><text x="220.0" y="763" text-anchor="middle" class="lbl">Done. N rows changed + log + cache cleared</text></g></svg></div>
+<ol>
+<li><strong>Generate write SQL</strong> (capable model). It can ask for clarification or say it cannot, as in step 6.</li>
+<li><strong>Write guard.</strong> Exactly one statement, and it must be an <code>INSERT</code>, <code>UPDATE</code> or <code>DELETE</code>. A second write hidden in a <code>WITH</code> is rejected. <code>UPDATE</code> and <code>DELETE</code> need a <code>WHERE</code>. Tables must be known tables in <code>public</code>, so the <code>app</code> schema is blocked. The same forbidden functions apply. An unknown table gives <code>off_topic</code>, and any other rejection gives <code>unsafe</code>.</li>
+<li><strong>Dry run.</strong> The statement runs in a transaction with the timeout, the row count is read, and the transaction is <strong>always rolled back</strong>.</li>
+</ol>
+<div class="table-wrap"><table><thead><tr><th>Dry-run outcome</th><th>Result</th></tr></thead><tbody>
+<tr><td>Database error</td><td><code>off_topic</code>: "I couldn't prepare that change: …"</td></tr>
+<tr><td>0 rows</td><td><code>off_topic</code>: "wouldn't affect any rows"</td></tr>
+<tr><td>More than <code>MAX_WRITE_ROWS</code> (100)</td><td><code>unsafe</code>: narrow it down</td></tr>
+<tr><td>1 to 100 rows</td><td>A <code>change</code> preview: the exact SQL, the row count and a one-time token (kept in Redis for 300 s)</td></tr>
+</tbody></table></div>
+<p>A preview is never cached, and history stores it <strong>without</strong> the token.</p>
+
+<h3>Confirm: <code>POST /chat/confirm-change</code> (admin only)</h3>
+<ol>
+<li>The token is taken atomically. Missing, expired or already used gives <span class="tag bad">410</span>. A token issued to another admin gives <span class="tag bad">403</span>, and the token is consumed anyway.</li>
+<li>If the connected database changed since the preview: <span class="tag bad">409</span>. If it is unreachable: <span class="tag bad">400</span>.</li>
+<li>The SQL is re-validated by the write guard and committed in one transaction. If the row count differs from the preview, or exceeds the limit, it rolls back with <span class="tag bad">409</span>. A database error gives <span class="tag bad">400</span> and nothing is saved.</li>
+<li>On success the answer is "Done. N rows changed." In the background it writes <code>app.data_changes</code> and the activity log, <strong>clears cached answers</strong> (everyone's if you are on the shared demo database, otherwise only yours), and saves a "Confirmed: …" history entry.</li>
+</ol>
+
+<h2 id="after">3. After the graph, for every response</h2>
+<ul>
+<li>If a title was requested, the controller waits <strong>up to 4 s</strong> for it. It is applied only if you have not renamed the chat.</li>
+<li>The response gets its per-step timings.</li>
+<li>Background tasks run after the response is sent:
+<ul>
+<li>save the exchange to history, which also bumps the conversation's time;</li>
+<li>cache the response in Redis, unless it was a cache hit or a change preview;</li>
+<li>after a successful step 8 where every query returned rows, store the question and SQL as a few-shot example (skipped if the same question or the same SQL is already stored).</li>
+</ul></li>
+<li>On the next screen, if the last answer was a successful data question, the UI calls <code>GET /conversations/{id}/followups</code> for suggested next questions. It returns none otherwise.</li>
+</ul>
+
+<h2 id="stream">4. Streaming</h2>
+<p><code>POST /chat/stream</code> runs the same code in a worker thread. As each step starts it sends a <code>stage</code> event: <code>input_guard</code>, <code>cache_lookup</code>, <code>resolve_connection</code>, <code>load_history</code>, <code>router</code>, <code>retrieve_examples</code>, <code>generate_sql</code>, <code>sql_guard</code>, <code>execute_sql</code> or <code>generate_answer</code>. The UI groups these into four stages: reading, writing the query, running it, writing the answer. The stream ends with one <code>done</code> event (the same payload as <code>/chat</code>) or one <code>error</code> event.</p>
+
+<h2 id="outcomes">5. Every outcome</h2>
+<div class="table-wrap"><table><thead><tr><th>Situation</th><th>Intent</th><th>Model calls</th><th>Status</th></tr></thead><tbody>
+<tr><td>Empty, too long or injection-like</td><td><code>unsafe</code></td><td>none</td><td>200</td></tr>
+<tr><td>Same question already cached</td><td>original</td><td>none</td><td>200, <code>cache_hit</code></td></tr>
+<tr><td>Saved database unreachable</td><td><code>connection_error</code></td><td>none</td><td>200</td></tr>
+<tr><td>Greeting or small talk</td><td><code>greeting</code></td><td>router</td><td>200</td></tr>
+<tr><td>Unrelated question</td><td><code>off_topic</code></td><td>router</td><td>200</td></tr>
+<tr><td>Write attempt as a non-admin</td><td><code>unsafe</code></td><td>router</td><td>200</td></tr>
+<tr><td>Needs clarification</td><td><code>needs_clarification</code></td><td>router, SQL</td><td>200</td></tr>
+<tr><td>Schema cannot answer</td><td><code>off_topic</code></td><td>router, SQL</td><td>200</td></tr>
+<tr><td>SQL rejected by the guard</td><td><code>unsafe</code></td><td>router, SQL</td><td>200</td></tr>
+<tr><td>Unknown table</td><td><code>off_topic</code></td><td>router, SQL</td><td>200</td></tr>
+<tr><td>Normal success</td><td><code>data_question</code></td><td>router, SQL, answer</td><td>200</td></tr>
+<tr><td>Database errors, fixed on retry</td><td><code>data_question</code></td><td>one extra SQL call per retry</td><td>200</td></tr>
+<tr><td>3 failed attempts</td><td><code>off_topic</code></td><td>router, 3 × SQL</td><td>200</td></tr>
+<tr><td>Admin change, preview ready</td><td><code>data_change</code></td><td>router, write SQL</td><td>200</td></tr>
+<tr><td>Admin change: 0 rows, too many, or error</td><td><code>off_topic</code> / <code>unsafe</code></td><td>router, write SQL</td><td>200</td></tr>
+<tr><td>Conversation not yours or missing</td><td>none</td><td>none</td><td>404</td></tr>
+<tr><td>Model unavailable (timeout, rate limit)</td><td>none</td><td></td><td>503</td></tr>
+<tr><td>Unhandled application-database error</td><td>none</td><td></td><td>400 (stream: 500 for other errors)</td></tr>
+</tbody></table></div>
+
+<h2 id="down">6. When something is down</h2>
+<div class="table-wrap"><table><thead><tr><th>Down</th><th>Effect</th></tr></thead><tbody>
+<tr><td>Redis</td><td>Every question is a cache miss. The login rate limiter and pending change tokens fall back to memory. Nothing breaks.</td></tr>
+<tr><td>Qdrant or embeddings</td><td>No few-shot examples and nothing is learned. Answers still work.</td></tr>
+<tr><td>Azure OpenAI</td><td>Anything that needs a model returns 503. Cache hits and input-guard refusals still work.</td></tr>
+<tr><td>Your connected database</td><td>A <code>connection_error</code> message in chat.</td></tr>
+<tr><td>The app database (history, logs)</td><td>Saves fail quietly with a warning, and the response is still sent.</td></tr>
+</tbody></table></div>
+
+<h2 id="quirks">7. Things to know</h2>
+<div class="note"><p><strong>Refusals are cached too.</strong> Everything except change previews is cached for an hour, including refusals, clarification questions and <code>connection_error</code> messages. After your database comes back, the same question can still show the old error until the cache expires, or until you use regenerate, which skips the cache.</p></div>
+<div class="note"><p><strong>Reads and writes use the same database login.</strong> Read-only safety comes from the SQL guard plus the read-only transaction, not from a separate database user.</p></div>
+</main>
+</div>
+</body>
+</html>
