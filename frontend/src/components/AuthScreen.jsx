@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { logIn, signUp } from "../api";
+import ThemeToggle from "./ThemeToggle";
 
 const MODES = {
   login: {
@@ -23,6 +24,10 @@ const MODES = {
 };
 
 export default function AuthScreen({ onAuthenticated }) {
+  useEffect(() => {
+    document.title = "Sign in · Askbase";
+  }, []);
+
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -54,6 +59,7 @@ export default function AuthScreen({ onAuthenticated }) {
 
   return (
     <main className="auth">
+      <ThemeToggle className="auth-theme" />
       <form className="auth-card" onSubmit={handleSubmit}>
         <h1 className="auth-title">{copy.title}</h1>
         <p className="auth-subtitle">{copy.subtitle}</p>

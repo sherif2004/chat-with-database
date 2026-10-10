@@ -63,7 +63,7 @@ export default function Composer({
           aria-busy={sending}
         />
         {nearLimit && (
-          <span className="composer-count" aria-live="polite">
+          <span className="composer-count">
             {value.length}/{MAX_LENGTH}
           </span>
         )}

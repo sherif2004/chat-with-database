@@ -18,8 +18,11 @@ import Composer from "./components/Composer";
 import DatabasePanel from "./components/DatabasePanel";
 import Icon from "./components/Icon";
 import Message from "./components/Message";
-import Progress from "./components/Progress";
+import Progress, { stageKeyFor } from "./components/Progress";
 import Rail from "./components/Rail";
+
+// The product name shown in the browser tab; change it here and in index.html.
+const APP_NAME = "Askbase";
 
 let nextId = 0;
 const newId = () => ++nextId;
@@ -36,6 +39,11 @@ export default function App() {
       .then(setUser)
       .catch(() => setUser(null));
   }, []);
+
+  useEffect(() => {
+    if (user !== undefined) return;
+    document.title = APP_NAME;
+  }, [user]);
 
   if (user === undefined) {
     return <div className="auth-loading" role="status">Loading…</div>;
@@ -78,6 +86,10 @@ function ChatApp({ user, onSignedOut }) {
   const bottomRef = useRef(null);
   const composerRef = useRef(null);
   const dbButtonRef = useRef(null);
+  const menuButtonRef = useRef(null);
+  const shellRef = useRef(null);
+  const sendRef = useRef(null);
+  const skipRailFocus = useRef(false);
   const abortRef = useRef(null);
   const activeRef = useRef(null);
 
@@ -154,15 +166,53 @@ function ChatApp({ user, onSignedOut }) {
     });
   }, [timeline, sending, stage, followups]);
 
+  const closeRail = useCallback(() => setRailOpen(false), []);
+  const closeDatabase = useCallback(() => setDbOpen(false), []);
+
   useEffect(() => {
+    if (!railOpen && !dbOpen) return;
+
     function onKeyDown(event) {
       if (event.key !== "Escape") return;
-      setRailOpen(false);
-      setDbOpen(false);
+      if (dbOpen) closeDatabase();
+      else closeRail();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [railOpen, dbOpen, closeRail, closeDatabase]);
+
+  // Give focus back to whatever opened a drawer once it closes. This waits
+  // for the effect below to clear `inert`, which blocks focus while set.
+  const wasRailOpen = useRef(false);
+  const wasDbOpen = useRef(false);
+  useEffect(() => {
+    if (wasRailOpen.current && !railOpen && !skipRailFocus.current) {
+      menuButtonRef.current?.focus();
+    }
+    skipRailFocus.current = false;
+    if (wasDbOpen.current && !dbOpen) dbButtonRef.current?.focus();
+    wasRailOpen.current = railOpen;
+    wasDbOpen.current = dbOpen;
+  }, [railOpen, dbOpen]);
+
+  // While a drawer is open the rest of the page is inert, so Tab and
+  // screen-reader navigation stay inside it.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+
+    const chat = shell.querySelector(".chat");
+    const rail = shell.querySelector(".rail");
+    const narrow = window.matchMedia("(max-width: 900px)").matches;
+
+    chat.inert = dbOpen || (railOpen && narrow);
+    rail.inert = dbOpen;
+
+    return () => {
+      chat.inert = false;
+      rail.inert = false;
+    };
+  }, [railOpen, dbOpen]);
 
   const lastExchange = [...timeline].reverse().find((item) => item.type === "exchange");
 
@@ -201,7 +251,7 @@ function ChatApp({ user, onSignedOut }) {
 
       setTimeline((prev) =>
         prev.map((item) =>
-          item.id === itemId ? { ...item, response, pending: false } : item
+          item.id === itemId ? { ...item, response, pending: false, fresh: true } : item
         )
       );
 
@@ -242,25 +292,32 @@ function ChatApp({ user, onSignedOut }) {
     }
   }
 
-  function startNewChat() {
+  sendRef.current = send;
+
+  const startNewChat = useCallback(() => {
     setActiveId(null);
     activeRef.current = null;
     setTimeline([]);
     setFollowups([]);
     setEditing(false);
     setQuestion("");
+    skipRailFocus.current = true; // the composer takes focus instead
     setRailOpen(false);
     composerRef.current?.focus();
-  }
+  }, []);
 
-  function startEditing() {
-    if (!lastExchange) return;
-    setQuestion(lastExchange.question);
+  const startEditing = useCallback((text) => {
+    setQuestion(text);
     setEditing(true);
     composerRef.current?.focus();
-  }
+  }, []);
 
-  async function handleRename(id, title) {
+  const regenerate = useCallback(
+    (text) => sendRef.current(text, { replaceLast: true }),
+    []
+  );
+
+  const handleRename = useCallback(async (id, title) => {
     setConversations((prev) =>
       prev.map((conversation) => (conversation.id === id ? { ...conversation, title } : conversation))
     );
@@ -270,17 +327,20 @@ function ChatApp({ user, onSignedOut }) {
       fail(error);
       getConversations().then(setConversations).catch(fail);
     }
-  }
+  }, [fail]);
 
-  async function handleDelete(id) {
-    try {
-      await deleteConversation(id);
-      setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
-      if (id === activeRef.current) startNewChat();
-    } catch (error) {
-      fail(error);
-    }
-  }
+  const handleDelete = useCallback(
+    async (id) => {
+      try {
+        await deleteConversation(id);
+        setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
+        if (id === activeRef.current) startNewChat();
+      } catch (error) {
+        fail(error);
+      }
+    },
+    [fail, startNewChat]
+  );
 
   async function handleConnect(databaseUrl, label) {
     setConnecting(true);
@@ -297,24 +357,26 @@ function ChatApp({ user, onSignedOut }) {
     }
   }
 
-  async function handleSignOut() {
+  const handleSignOut = useCallback(async () => {
     try {
       await logOut();
     } finally {
       onSignedOut();
     }
-  }
-
-  function closeDatabase() {
-    setDbOpen(false);
-    dbButtonRef.current?.focus();
-  }
+  }, [onSignedOut]);
 
   const activeConversation = conversations.find((c) => c.id === activeId);
+
+  // The tab shows the open chat's title (and that it is working), then the name.
+  const tabTitle = activeConversation?.title;
+  useEffect(() => {
+    const base = tabTitle ? `${tabTitle} · ${APP_NAME}` : APP_NAME;
+    document.title = sending ? `Working… · ${base}` : base;
+  }, [tabTitle, sending]);
   const showEmpty = timeline.length === 0 && !sending && !messagesLoading;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={shellRef}>
       <Rail
         conversations={conversations}
         activeId={activeId}
@@ -322,7 +384,7 @@ function ChatApp({ user, onSignedOut }) {
         locked={sending}
         user={user}
         open={railOpen}
-        onClose={() => setRailOpen(false)}
+        onClose={closeRail}
         onNew={startNewChat}
         onSelect={openConversation}
         onRename={handleRename}
@@ -330,12 +392,14 @@ function ChatApp({ user, onSignedOut }) {
         onSignOut={handleSignOut}
       />
 
-      <main className="chat">
+      <main className="chat" data-stage={sending ? stageKeyFor(stage) : undefined}>
         <header className="chat-bar">
           <button
+            ref={menuButtonRef}
             type="button"
             className="icon-button chat-menu"
             aria-label="Open conversations"
+            aria-expanded={railOpen}
             onClick={() => setRailOpen(true)}
           >
             <Icon name="menu" size={20} />
@@ -347,6 +411,8 @@ function ChatApp({ user, onSignedOut }) {
             className="db-button"
             onClick={() => setDbOpen(true)}
             aria-haspopup="dialog"
+            aria-expanded={dbOpen}
+            aria-label={`Connected database: ${connection?.label ?? "loading"}`}
           >
             <span
               className={`connection-dot ${
@@ -366,10 +432,11 @@ function ChatApp({ user, onSignedOut }) {
           aria-label="Conversation"
         >
           {messagesLoading && (
-            <div className="skeleton" aria-hidden="true">
-              <span className="skeleton-bubble skeleton-right" />
-              <span className="skeleton-bubble" />
-              <span className="skeleton-bubble skeleton-right skeleton-short" />
+            <div className="skeleton">
+              <span className="sr-only">Loading conversation…</span>
+              <span className="skeleton-bubble skeleton-right" aria-hidden="true" />
+              <span className="skeleton-bubble" aria-hidden="true" />
+              <span className="skeleton-bubble skeleton-right skeleton-short" aria-hidden="true" />
             </div>
           )}
 
@@ -379,7 +446,7 @@ function ChatApp({ user, onSignedOut }) {
               <p className="chat-empty-subtitle">
                 Ask in plain language. You'll get an answer first, and can open the details to see exactly how it was found.
               </p>
-              <div className="starters" aria-label="Example questions">
+              <div className="starters" role="group" aria-label="Example questions">
                 {starters === null && (
                   <>
                     <span className="starter starter-skeleton" />
@@ -414,10 +481,12 @@ function ChatApp({ user, onSignedOut }) {
                 ) : (
                   <Message
                     role="assistant"
+                    question={item.question}
                     response={item.response}
                     error={item.error}
+                    fresh={item.fresh}
                     isLast={item.id === lastExchange?.id && !sending && !item.error}
-                    onRegenerate={() => send(item.question, { replaceLast: true })}
+                    onRegenerate={regenerate}
                     onEdit={startEditing}
                   />
                 )}
@@ -426,7 +495,7 @@ function ChatApp({ user, onSignedOut }) {
           )}
 
           {followups.length > 0 && !sending && (
-            <div className="followups" aria-label="Suggested follow-up questions">
+            <div className="followups" role="group" aria-label="Suggested follow-up questions">
               {followups.map((followup) => (
                 <button
                   key={followup}

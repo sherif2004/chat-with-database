@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
+import ThemeToggle from "./ThemeToggle";
 
 const GROUPS = ["Today", "Yesterday", "Previous 7 days", "Earlier"];
 
@@ -19,15 +20,26 @@ function Row({ conversation, active, locked, onSelect, onRename, onDelete }) {
   const [mode, setMode] = useState("idle"); // idle | renaming | confirming
   const [draft, setDraft] = useState(conversation.title);
   const inputRef = useRef(null);
+  const titleRef = useRef(null);
+  const leftEditing = useRef(false);
 
   useEffect(() => {
     if (mode === "renaming") inputRef.current?.select();
+    if (mode === "idle" && leftEditing.current) {
+      leftEditing.current = false;
+      titleRef.current?.focus();
+    }
   }, [mode]);
+
+  function setModeAndRestore(next) {
+    if (next === "idle" && mode !== "idle") leftEditing.current = true;
+    setMode(next);
+  }
 
   function commitRename() {
     const title = draft.trim();
     if (title && title !== conversation.title) onRename(conversation.id, title);
-    setMode("idle");
+    setModeAndRestore("idle");
   }
 
   if (mode === "renaming") {
@@ -45,7 +57,7 @@ function Row({ conversation, active, locked, onSelect, onRename, onDelete }) {
             if (event.key === "Enter") commitRename();
             if (event.key === "Escape") {
               setDraft(conversation.title);
-              setMode("idle");
+              setModeAndRestore("idle");
             }
           }}
           autoFocus
@@ -65,7 +77,12 @@ function Row({ conversation, active, locked, onSelect, onRename, onDelete }) {
         >
           Delete
         </button>
-        <button type="button" className="text-button" onClick={() => setMode("idle")}>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setModeAndRestore("idle")}
+          autoFocus
+        >
           Keep
         </button>
       </li>
@@ -75,6 +92,7 @@ function Row({ conversation, active, locked, onSelect, onRename, onDelete }) {
   return (
     <li className={`rail-row ${active ? "rail-row-active" : ""}`}>
       <button
+        ref={titleRef}
         type="button"
         className="rail-title"
         aria-current={active ? "true" : undefined}
@@ -109,7 +127,7 @@ function Row({ conversation, active, locked, onSelect, onRename, onDelete }) {
   );
 }
 
-export default function Rail({
+function Rail({
   conversations,
   activeId,
   loading,
@@ -128,6 +146,13 @@ export default function Rail({
     items: conversations.filter((conversation) => groupOf(conversation.updated_at) === name),
   })).filter((group) => group.items.length > 0);
 
+  const closeRef = useRef(null);
+
+  // On narrow screens the rail is a drawer: move focus into it when it opens.
+  useEffect(() => {
+    if (open) closeRef.current?.focus();
+  }, [open]);
+
   return (
     <>
       {open && <div className="scrim" onClick={onClose} aria-hidden="true" />}
@@ -138,6 +163,7 @@ export default function Rail({
             New chat
           </button>
           <button
+            ref={closeRef}
             type="button"
             className="icon-button rail-close"
             aria-label="Close conversations"
@@ -178,6 +204,7 @@ export default function Rail({
           <span className="sidebar-account-email" title={user.email}>
             {user.email}
           </span>
+          <ThemeToggle />
           <button type="button" className="sidebar-link-button" onClick={onSignOut}>
             Sign out
           </button>
@@ -186,3 +213,5 @@ export default function Rail({
     </>
   );
 }
+
+export default memo(Rail);

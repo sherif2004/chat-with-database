@@ -9,7 +9,7 @@ function answerText(response) {
   return result.answer || "";
 }
 
-function Message({ role, question, response, error, isLast, onRegenerate, onEdit }) {
+function Message({ role, question, response, error, fresh, isLast, onRegenerate, onEdit }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const detailsId = useId();
@@ -49,7 +49,7 @@ function Message({ role, question, response, error, isLast, onRegenerate, onEdit
   }
 
   return (
-    <div className="message message-assistant">
+    <div className={`message message-assistant${fresh ? " message-fresh" : ""}`}>
       <div className="message-assistant-column">
         <div className="bubble">
           {result.type === "table" ? (
@@ -80,11 +80,11 @@ function Message({ role, question, response, error, isLast, onRegenerate, onEdit
           </button>
           {isLast && (
             <>
-              <button type="button" className="text-button" onClick={onRegenerate}>
+              <button type="button" className="text-button" onClick={() => onRegenerate(question)}>
                 <Icon name="refresh" size={14} />
                 Regenerate
               </button>
-              <button type="button" className="text-button" onClick={onEdit}>
+              <button type="button" className="text-button" onClick={() => onEdit(question)}>
                 <Icon name="pencil" size={14} />
                 Edit question
               </button>

@@ -18,6 +18,11 @@ function stageIndex(step) {
   return STAGES.findIndex((stage) => stage.steps.includes(step));
 }
 
+/** The stage a pipeline step belongs to; drives the stage color. */
+export function stageKeyFor(step) {
+  return STAGES[Math.max(stageIndex(step), 0)].key;
+}
+
 export default function Progress({ step }) {
   const current = Math.max(stageIndex(step), 0);
   // Only stages already reached are shown, so we never promise a step
@@ -25,12 +30,14 @@ export default function Progress({ step }) {
   const shown = STAGES.slice(0, current + 1);
 
   return (
-    <div className="message message-assistant" role="status">
-      <div className="bubble bubble-pending">
+    <div className="message message-assistant">
+      <div className="bubble bubble-pending" data-stage={STAGES[current].key}>
+        <span className="progress-line" aria-hidden="true" />
         <ol className="progress">
           {shown.map((stage, index) => (
             <li
               key={stage.key}
+              data-stage={stage.key}
               className={index < current ? "progress-done" : "progress-active"}
             >
               <span className="progress-mark" aria-hidden="true" />

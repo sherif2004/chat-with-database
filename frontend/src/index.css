@@ -1,44 +1,60 @@
-:root {
-  color-scheme: light dark;
-  --bg: #f5f5f7;
-  --surface: #ffffff;
-  --surface-alt: #f7f8fa;
-  --border: #e3e4e8;
-  --text: #1c1e21;
-  --text-muted: #6b7280;
-  --brand: #0a84ff;
-  --accent: #0066d6;
-  --accent-fill: #0066d6;
-  --accent-text: #ffffff;
-  --badge-neutral: rgba(107, 114, 128, 0.14);
-  --status-ok: #2ecc71;
-  --status-warn: #e67e22;
-  --bubble-assistant: #f0f1f4;
-  --bubble-error-bg: #fdecec;
-  --bubble-error-text: #b3261e;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.05);
-  --scrollbar-thumb: #d0d2d8;
+/* Animatable so the stage color cross-fades instead of jumping. */
+@property --stage-color {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #5b5fe0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16171a;
-    --surface: #1e1f23;
-    --surface-alt: #232428;
-    --border: #302f34;
-    --text: #eceef1;
-    --text-muted: #9799a1;
-    --badge-neutral: rgba(151, 153, 161, 0.18);
-    --brand: #3b9cff;
-    --accent: #3b9cff;
-    --accent-fill: #0a6fe0;
-    --accent-text: #ffffff;
-    --bubble-assistant: #2a2b30;
-    --bubble-error-bg: #3a2323;
-    --bubble-error-text: #ff9a92;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
-    --scrollbar-thumb: #3a3b40;
-  }
+:root {
+  /* Every color token holds a light and a dark value via light-dark(); the
+     scheme comes from the OS unless [data-theme] pins it (see theme.js). */
+  color-scheme: light dark;
+
+  --bg: light-dark(#f5f5f7, #16171a);
+  --surface: light-dark(#ffffff, #1e1f23);
+  --surface-alt: light-dark(#f7f8fa, #232428);
+  --border: light-dark(#e3e4e8, #302f34);
+  /* Boundaries of text fields: at least 3:1 against what is behind them. */
+  --border-strong: light-dark(#858b97, #6f727c);
+  --text: light-dark(#1c1e21, #eceef1);
+  --text-muted: light-dark(#5d6573, #9799a1);
+
+  --brand: light-dark(#0a84ff, #3b9cff);
+  --accent: light-dark(#0066d6, #3b9cff);
+  --accent-fill: light-dark(#0066d6, #0a6fe0);
+  --accent-text: #ffffff;
+
+  --stage-read: light-dark(#5b5fe0, #8b8ff5);
+  --stage-write: light-dark(#9b5de5, #b98af0);
+  --stage-run: light-dark(#0b8f8e, #3ad1cf);
+  --stage-answer: light-dark(#1b8a5a, #4cd09a);
+  --stage-error: light-dark(#e5484d, #ff8a8e);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --badge-neutral: light-dark(rgba(107, 114, 128, 0.14), rgba(151, 153, 161, 0.18));
+  --status-ok: #2ecc71;
+  --status-warn: #e67e22;
+  --bubble-assistant: light-dark(#f0f1f4, #2a2b30);
+  --bubble-error-bg: light-dark(#fdecec, #3a2323);
+  --bubble-error-text: light-dark(#b3261e, #ff9a92);
+  --shadow: 0 1px 2px light-dark(rgba(16, 24, 40, 0.06), rgba(0, 0, 0, 0.35)),
+    0 2px 6px light-dark(rgba(16, 24, 40, 0.05), rgba(0, 0, 0, 0.25));
+  --scrollbar-thumb: light-dark(#d0d2d8, #3a3b40);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
 }
 
 * {
@@ -180,7 +196,7 @@ td {
 
 .connect-form input {
   padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--surface);
   color: var(--text);
@@ -224,7 +240,7 @@ td {
 
 .schema-filter {
   padding: 7px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--surface);
   color: var(--text);
@@ -738,7 +754,7 @@ tbody tr:nth-child(even) {
 
 .auth-field input {
   padding: 11px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--surface-alt);
   color: var(--text);
@@ -1204,7 +1220,7 @@ tbody tr:nth-child(even) {
   align-items: flex-end;
   gap: 8px;
   padding: 6px 6px 6px 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 22px;
   background: var(--surface-alt);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -1368,6 +1384,7 @@ tbody tr:nth-child(even) {
   display: flex;
   align-items: center;
   gap: 8px;
+  animation: stage-in 0.25s var(--ease-out) both;
 }
 
 .progress-done {
@@ -1378,22 +1395,25 @@ tbody tr:nth-child(even) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  border: 1.5px solid var(--text-muted);
+  border: 1.5px solid var(--stage-color);
   flex-shrink: 0;
 }
 
 .progress-done .progress-mark {
-  background: var(--text-muted);
+  background: var(--stage-color);
+  animation: mark-pop 0.3s var(--ease-out);
 }
 
 .progress-active .progress-mark {
-  border-color: var(--brand);
-  background: var(--brand);
+  background: var(--stage-color);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 .bubble-pending {
-  padding: 12px 16px;
+  position: relative;
+  overflow: hidden;
+  padding: 14px 16px 12px;
+  transition: --stage-color 0.5s var(--ease-out);
 }
 
 .result {
@@ -1514,12 +1534,15 @@ th.cell-number .sort-button {
     width: min(300px, 86vw);
     transform: translateX(-100%);
     visibility: hidden;
-    transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), visibility 0.2s;
+    /* Hidden only after the slide-out finishes, so it stays out of the tab order. */
+    transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), visibility 0s linear 0.2s;
   }
 
   .rail-open {
     transform: none;
     visibility: visible;
+    /* Visible immediately, so focus can move in as it slides open. */
+    transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), visibility 0s;
   }
 
   .icon-button.rail-close,
@@ -1536,7 +1559,23 @@ th.cell-number .sort-button {
   }
 }
 
+@media (hover: none) {
+  .rail-actions {
+    display: flex;
+  }
+}
+
 @media (pointer: coarse) {
+  .sort-button,
+  .rail-rename {
+    min-height: 44px;
+  }
+
+  .composer-button {
+    width: 44px;
+    height: 44px;
+  }
+
   .rail-title,
   .starter,
   .tool-button,
@@ -1553,4 +1592,270 @@ th.cell-number .sort-button {
   .text-button {
     min-height: 44px;
   }
+}
+
+/* ---- Motion: color follows the pipeline ---- */
+
+[data-stage="understand"] {
+  --stage-color: var(--stage-read);
+}
+
+[data-stage="write"] {
+  --stage-color: var(--stage-write);
+}
+
+[data-stage="run"] {
+  --stage-color: var(--stage-run);
+}
+
+[data-stage="answer"] {
+  --stage-color: var(--stage-answer);
+}
+
+.chat {
+  transition: --stage-color 0.5s var(--ease-out);
+}
+
+/* The pipeline line: a faint track with a streak that carries the stage color. */
+.progress-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--stage-color) 22%, transparent);
+  overflow: hidden;
+}
+
+.progress-line::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--stage-color), transparent);
+  animation: streak 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes streak {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes mark-pop {
+  from {
+    transform: scale(0.5);
+  }
+}
+
+/* The stop button shows the current stage as a ring, and ripples once as it appears. */
+.composer-stop {
+  position: relative;
+  box-shadow: 0 0 0 2px var(--surface-alt), 0 0 0 4px var(--stage-color);
+  transition: --stage-color 0.5s var(--ease-out);
+}
+
+.composer-stop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--stage-color);
+  animation: ripple 0.7s var(--ease-out) both;
+  pointer-events: none;
+}
+
+@keyframes ripple {
+  from {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+
+/* A fresh answer arrives: the bubble settles in under a green sweep, and its rows follow. */
+.message-fresh.message {
+  animation: none;
+}
+
+.message-fresh .bubble {
+  position: relative;
+  animation: reveal 0.45s var(--ease-out) both;
+}
+
+.message-fresh .bubble::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--stage-answer);
+  transform-origin: left;
+  animation: sweep 0.9s 0.1s var(--ease-out) both;
+  pointer-events: none;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes sweep {
+  0% {
+    opacity: 1;
+    transform: scaleX(0);
+  }
+  60% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+.message-fresh tbody tr {
+  animation: row-in 0.32s var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 35ms + 150ms);
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.chart-bar {
+  transform-origin: left;
+  animation: bar-grow 0.6s var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 12) * 40ms);
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Idle wash behind the starters: slow, low-contrast drift in the stage colors. */
+.chat-empty {
+  position: relative;
+  isolation: isolate;
+  contain: paint;
+  padding: 72px 24px;
+}
+
+.chat-empty::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(40% 50% at 22% 40%, color-mix(in srgb, var(--stage-read) 16%, transparent), transparent 70%),
+    radial-gradient(40% 50% at 78% 32%, color-mix(in srgb, var(--stage-write) 14%, transparent), transparent 70%),
+    radial-gradient(45% 55% at 50% 82%, color-mix(in srgb, var(--stage-run) 13%, transparent), transparent 70%);
+  /* Fade to nothing toward the edges so the wash never shows a boundary. */
+  -webkit-mask-image: radial-gradient(ellipse closest-side at 50% 50%, #000 45%, transparent 100%);
+  mask-image: radial-gradient(ellipse closest-side at 50% 50%, #000 45%, transparent 100%);
+  animation: wash 26s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes wash {
+  from {
+    transform: translate3d(-3%, -2%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.08);
+  }
+}
+
+/* A failed answer shakes once. */
+.bubble-error {
+  animation: shake 0.4s var(--ease-out);
+}
+
+@keyframes shake {
+  20% {
+    transform: translateX(-5px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion keeps the meaning (stage color, arrival, failure) without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .progress-line::after {
+    animation: none;
+    width: 100%;
+    background: var(--stage-color);
+    opacity: 0.7;
+  }
+
+  .progress li,
+  .progress-done .progress-mark,
+  .message-fresh tbody tr,
+  .chart-bar,
+  .chat-empty::before {
+    animation: none;
+  }
+
+  .composer-stop::after,
+  .message-fresh .bubble::before {
+    display: none;
+  }
+
+  .message-fresh .bubble,
+  .bubble-error {
+    animation: fade-in 0.25s both;
+  }
+}
+
+/* ---- Theme toggle ---- */
+
+.theme-toggle {
+  flex-shrink: 0;
+}
+
+.auth .theme-toggle,
+.auth-theme {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+}
+
+.rail .sidebar-account {
+  gap: 4px;
 }

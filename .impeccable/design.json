@@ -149,8 +149,8 @@
     ],
     "breakpoints": [
       {
-        "name": "stack",
-        "value": "700px"
+        "name": "rail-drawer",
+        "value": "900px"
       }
     ]
   },
@@ -210,11 +210,43 @@
       "description": "Expandable table entry in the sidebar schema tree.",
       "html": "<button class=\"ds-schema-row\"><span class=\"ds-caret\">&#9654;</span><span class=\"ds-name\">Album</span><span class=\"ds-count\">3</span></button>",
       "css": ".ds-schema-row { width: 100%; display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 6px 4px; font-size: .85em; color: #1c1e21; cursor: pointer; border-radius: 6px; text-align: left; } .ds-schema-row:hover { background: #fff; } .ds-schema-row:focus-visible { outline: 2px solid #0a84ff; } .ds-caret { font-size: .7em; color: #6b7280; } .ds-name { font-weight: 600; flex: 1; } .ds-count { font-size: .8em; color: #6b7280; }"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "refersTo": "input-chat",
+      "description": "Auto-growing message box with a round send button.",
+      "html": "<div class=\"ds-composer\"><textarea rows=\"1\" placeholder=\"Ask a question about your data\"></textarea><button aria-label=\"Send\">&#8593;</button></div>",
+      "css": ".ds-composer { display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 16px; border: 1px solid #e3e4e8; border-radius: 22px; background: #f7f8fa; } .ds-composer:focus-within { border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,.15); } .ds-composer textarea { flex: 1; padding: 8px 0; border: none; outline: none; resize: none; background: none; color: #1c1e21; font: inherit; line-height: 1.4; } .ds-composer button { width: 40px; height: 40px; border: none; border-radius: 50%; background: #0066d6; color: #fff; cursor: pointer; }"
+    },
+    {
+      "name": "Starter Chip",
+      "kind": "chip",
+      "refersTo": "button-primary",
+      "description": "Suggested question pill.",
+      "html": "<button class=\"ds-chip\">How many customers are registered?</button>",
+      "css": ".ds-chip { min-height: 36px; padding: 7px 14px; border: 1px solid #e3e4e8; border-radius: 999px; background: #fff; color: #1c1e21; font-size: .88em; cursor: pointer; } .ds-chip:hover { border-color: #0a84ff; background: #f7f8fa; } .ds-chip:focus-visible { outline: 2px solid #0a84ff; outline-offset: 2px; }"
+    },
+    {
+      "name": "Conversation Row",
+      "kind": "nav",
+      "refersTo": "sidebar-input",
+      "description": "Past chat entry in the rail; active state is white with a hairline.",
+      "html": "<div class=\"ds-row ds-row-active\">Artists by albums</div>",
+      "css": ".ds-row { padding: 8px 10px; border-radius: 8px; font-size: .88em; color: #1c1e21; } .ds-row-active { background: #fff; box-shadow: inset 0 0 0 1px #e3e4e8; font-weight: 600; }"
+    },
+    {
+      "name": "Result Tool Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Pill under a results table: Chart, Copy, CSV.",
+      "html": "<button class=\"ds-tool\">CSV</button>",
+      "css": ".ds-tool { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; border: 1px solid #e3e4e8; border-radius: 999px; background: #fff; color: #1c1e21; font-size: .78em; font-weight: 600; cursor: pointer; } .ds-tool:hover { border-color: #0a84ff; }"
     }
   ],
   "narrative": {
     "northStar": "The Glass Box",
-    "overview": "The product answers in the voice of an ordinary messaging app, then lets the reader lift the lid. Everything the system did to reach an answer is present, but folded behind a quiet details control so a non-technical analyst reads the plain sentence first. Transparency is available, never imposed.\n\nThe surface is soft and familiar: system font, rounded bubbles, hairline borders, tonal greys, and one blue voice. It is flat at rest; only message bubbles carry a faint shadow.",
+    "overview": "The product answers in the voice of an ordinary messaging app, then lets the reader lift the lid. Everything the system did to reach an answer is present, but folded behind a quiet details control so a non-technical analyst reads the plain sentence first. Transparency is available, never imposed.\n\nThe surface is soft and familiar: system font, rounded bubbles, hairline borders, tonal greys, and one blue voice. It is flat at rest; only message bubbles carry a faint shadow.\n\nThe shell is a conversation rail plus a centered chat column; the database and its schema open in a slide-over drawer.",
     "keyCharacteristics": [
       "Chat-bubble lineage: user right in blue, assistant left in tonal grey.",
       "One accent, used for identity and action only.",

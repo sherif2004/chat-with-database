@@ -12,7 +12,7 @@ colors:
   surface-alt: "#f7f8fa"
   hairline: "#e3e4e8"
   ink: "#1c1e21"
-  ink-muted: "#6b7280"
+  ink-muted: "#5d6573"
   bubble-assistant: "#f0f1f4"
   error-bg: "#fdecec"
   error-ink: "#b3261e"
@@ -127,10 +127,16 @@ A restrained neutral palette with a single saturated blue; everything else is gr
 - **Error** (#fdecec fill, #b3261e text): failed responses and connection errors.
 - **Status Green** (#2ecc71) and **Status Amber** (#e67e22): connection dot only.
 
-Dark mode reassigns every token (canvas #16171a, surface #1e1f23, surface-alt #232428, hairline #302f34, ink #eceef1, bubble #2a2b30) under `prefers-color-scheme`.
+Every token holds both its light and dark value through `light-dark()` in a single `:root` block, so there is one source of truth. Dark values: canvas #16171a, surface #1e1f23, surface-alt #232428, hairline #302f34, ink #eceef1, muted #9799a1, bubble #2a2b30. The scheme follows the OS by default; a theme toggle (System, Light, Dark) in the rail footer and on the sign-in screen pins it through `data-theme` on the root element, saved in `localStorage` and applied before first paint so there is no flash.
+
+- **Field Border** (#858b97 light, #6f727c dark): the boundary of text inputs, the composer and the schema filter, at least 3:1 against what is behind them. Decorative dividers keep the lighter hairline.
 
 ### Named Rules
-**The One Voice Rule.** Messenger Blue is the only chromatic color. A new hue needs a semantic job (state, status), never decoration.
+**The One Voice Rule.** Messenger Blue is the only chromatic color for identity and action. Any other hue must carry meaning; the only others are the five stage colors below and the semantic error and status colors.
+
+**The Stage Color Rule.** Color follows the pipeline. Reading your question is Indigo (#5b5fe0 / #8b8ff5 in dark), writing the query is Violet (#9b5de5 / #b98af0), running it on your data is Teal (#0b8f8e / #3ad1cf), writing the answer is Green (#1b8a5a / #4cd09a), and a failure is Coral (#e5484d / #ff8a8e). They appear only while work is happening and in brief accents afterward, as dots, lines, rings and a faint idle wash. They never color body text, and the stage name is always shown as words too. The light-mode Teal and Green are deepened from the originally proposed #0ea5a4 and #22a06b so they hold 3:1 against the assistant bubble.
+
+**The Both Modes Rule.** A new color is added as one `light-dark()` token with both values checked for contrast. Never style a mode separately in a component rule.
 
 **The Token Only Rule.** Components read colors from the `--bg/--surface/--text/--accent` custom properties so dark mode comes free; raw hex belongs only in the token block and the status dot.
 
@@ -152,14 +158,18 @@ Dark mode reassigns every token (canvas #16171a, surface #1e1f23, surface-alt #2
 
 ## Layout
 
-A centered shell, max 1100px, with a fixed 280px sidebar and a flexible chat column filling the viewport height. The sidebar holds connection status, a connect form, and a schema tree; the chat column stacks header, scrolling messages, and a pinned input row. Spacing follows a 4/8/12/16/20px rhythm; messages are separated by 10px gaps and assistant bubbles cap at 85% width. Below 700px the shell stacks vertically, with the sidebar capped at 40vh above the chat.
+A full-width shell: a 280px conversation rail on the left and a flexible chat column filling the viewport height. The rail holds New chat, past chats grouped by day, and the account row. The chat column stacks a top bar (title and database pill), scrolling messages, and a pinned composer. Message content is centered in an 820px column so lines stay readable on wide screens. The connected database and its schema live in a slide-over drawer opened from the database pill. Spacing follows a 4/8/12/16/20px rhythm; messages are separated by 10px gaps and assistant bubbles cap at 85% width. At 900px and below the rail becomes a slide-in drawer opened from a menu button; while a drawer is open the rest of the page is inert and Esc closes it, returning focus to its trigger. On coarse pointers, interactive controls grow to 44px.
 
 ## Elevation & Depth
 
-Flat and tonal. Layers are distinguished by surface shade and 1px hairline borders. The only shadow is a soft two-layer ambient shadow on message bubbles (`0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.05)`; heavier in dark mode); the user bubble gets a blue-tinted version. The chat input gains a 3px blue glow ring (15% alpha) on focus.
+Flat and tonal. Layers are distinguished by surface shade and 1px hairline borders. The only shadow is a soft two-layer ambient shadow on message bubbles (`0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.05)`; heavier in dark mode); the user bubble gets a blue-tinted version. The composer gains a 3px blue glow ring (15% alpha) on focus. Drawers sit above a 40% black scrim and carry no shadow.
 
 ### Named Rules
 **The Flat Chrome Rule.** Header, sidebar, panels and inputs never cast shadows. Only content (message bubbles) lifts.
+
+### Motion
+
+One authored moment per question: a thin line along the pending bubble carries the current stage color and cross-fades between stages (0.5s), each finished stage keeps its own colored dot, and the stop button wears a ring in the stage color. When the answer lands it settles in with a short green sweep and its table rows follow in a capped stagger; bar charts grow from zero. The empty chat has a slow, low-contrast drift of the stage colors behind the starters; a failed answer shakes once. Everything uses transform and opacity with an exponential ease-out (cubic-bezier(0.16, 1, 0.3, 1)). With reduced motion the stage color, arrival fade and failure feedback stay, and all movement, shimmer and drift are removed.
 
 ## Shapes
 
@@ -179,15 +189,30 @@ Friendly and rounded, with a clear radius hierarchy: pills (999px) for the chat 
 - **Pending:** three bouncing muted dots.
 - Messages enter with a 0.18s fade and 4px rise.
 
+### Conversation Rail
+A Surface Alt column. New chat is a bordered 10px-radius button; past chats are text rows grouped under small uppercase labels (Today, Yesterday, Previous 7 days, Earlier). The active row is white with a hairline inset border. Rename and delete icons appear on hover or focus (always on touch). Delete confirms inline ("Delete this chat? Delete / Keep") and focus returns to the row afterwards.
+
+### Composer
+A 22px-radius Surface Alt box with an auto-growing textarea (up to about six lines) and a round send button in Accessible Blue. While a request runs the send button becomes a stop button (ink on surface). Enter sends, Shift+Enter adds a line. A one-line hint sits below; editing the last question shows an "Editing your last question" strip above.
+
+### Progress
+While waiting, the assistant bubble lists only the pipeline stages reached so far (Reading your question, Writing the query, Running it on your data, Writing the answer): finished ones muted with a filled dot, the current one with a pulsing blue dot.
+
+### Starter and Follow-up Chips
+Pill buttons with a hairline border and white fill; hover turns the border blue. Starters (on the empty chat) are written from the connected schema; follow-ups sit below the latest answer.
+
 ### Inputs / Fields
-- **Chat input:** pill, Surface Alt fill, hairline border; focus turns the border blue and adds the glow ring.
+- **Sidebar fields:** see below.
 - **Sidebar fields:** 6px radius, Surface fill, hairline border; focus only changes border to blue.
 
 ### Details Panel (signature)
 A Surface Alt card with 10px radius under an assistant bubble, holding uppercase section labels, a timing list with a bold total row, monospace SQL blocks, few-shot examples, and a collapsible prompt. It is how the Glass Box shows its work.
 
 ### Result Table
-Bordered 10px-radius scroll wrapper, uppercase muted header on Surface Alt, hairline row dividers, even rows zebra-tinted, nowrap cells.
+Bordered 10px-radius scroll region (focusable, max 360px tall) with a sticky uppercase muted header on Surface Alt, sortable columns (header buttons with an arrow icon), right-aligned tabular numbers, hairline row dividers, zebra rows, nowrap cells and a dash for empty values. Beyond 10 rows it collapses behind "Show all N rows". Beneath it, pill tool buttons offer Chart (only for a label plus a number, 2 to 30 rows), Copy and CSV. The chart is horizontal bars in the brand blue on a hairline track.
+
+### Message Actions
+A muted row under each assistant bubble: latency, cached badge, Copy answer, and for the latest answer Regenerate and Edit question (drawn icons plus text), then the Details toggle.
 
 ### Schema Tree
 Filter field plus expandable table rows (rotating caret), muted column counts, and small PK (blue tint) and FK (grey tint) badges.
@@ -206,7 +231,8 @@ Cache-hit badge: blue outline pill. Chat notice: muted Surface Alt pill centered
 
 ### Don't:
 - **Don't** add shadows to chrome (header, sidebar, panels).
-- **Don't** introduce a second accent hue or gradients.
+- **Don't** add hues beyond the five stage colors, or use them for decoration or body text.
+- **Don't** loop motion once an answer has arrived; only the pending state and the idle wash may repeat.
 - **Don't** show raw SQL or timing data in the primary answer flow.
 - **Don't** set body or answer text below 0.9em; reserve small sizes for detail.
 - **Don't** hardcode hex values in component rules.

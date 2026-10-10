@@ -36,6 +36,10 @@ Chat With Database turns a natural-language question into SQL, runs it read-only
 - Results capped by MAX_ROWS; the answer is written from the first 20 rows.
 - SQL errors are retried up to 3 attempts before a "can't answer" message.
 
+## Brand Commitments
+
+Provisional name "Askbase" with a chat-bubble-and-database icon (`frontend/public/favicon.svg`), shown in the browser tab. The name is a placeholder the user may change; it lives in `frontend/index.html` and `APP_NAME` in `frontend/src/App.jsx`.
+
 ## Evidence on Hand
 
 Chinook demo data in `data/*.csv`, schema diagram `docs/Schema.jpg`, pipeline docs in `docs/workflow.md`. No testimonials, customers or benchmarks exist; do not fabricate them.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import Icon from "./Icon";
 
 const COLLAPSED_ROWS = 10;
@@ -33,7 +33,7 @@ function BarChart({ labels, values, labelName, valueName }) {
   return (
     <ul className="chart" aria-label={`${valueName} by ${labelName}`}>
       {labels.map((label, index) => (
-        <li key={index} className="chart-row">
+        <li key={index} className="chart-row" style={{ "--i": index }}>
           <span className="chart-label" title={String(label)}>
             {String(label)}
           </span>
@@ -50,7 +50,7 @@ function BarChart({ labels, values, labelName, valueName }) {
   );
 }
 
-export default function ResultTable({ query, label }) {
+function ResultTable({ query, label }) {
   const { columns, rows, truncated } = query;
   const [sort, setSort] = useState(null); // { index, direction }
   const [showAll, setShowAll] = useState(false);
@@ -125,7 +125,12 @@ export default function ResultTable({ query, label }) {
           valueName={columns[chartValueIndex]}
         />
       ) : (
-        <div className="table-scroll">
+        <div
+          className="table-scroll"
+          tabIndex={0}
+          role="region"
+          aria-label={label ? `${label} results` : "Query results"}
+        >
           <table>
             <thead>
               <tr>
@@ -157,7 +162,7 @@ export default function ResultTable({ query, label }) {
             </thead>
             <tbody>
               {visible.map((row, rowIndex) => (
-                <tr key={rowIndex}>
+                <tr key={rowIndex} style={{ "--i": rowIndex }}>
                   {row.map((cell, cellIndex) => (
                     <td
                       key={cellIndex}
@@ -209,3 +214,5 @@ export default function ResultTable({ query, label }) {
     </div>
   );
 }
+
+export default memo(ResultTable);
