@@ -27,6 +27,8 @@ from app.services.auth_service import (
     normalize_email,
     verify_password,
 )
+from app.models.activity_model import record_activity
+from app.models.user_model import get_user_by_token
 from app.services.permissions import permissions_for
 from app.views.auth_view import Credentials, UserInfo
 
@@ -92,6 +94,7 @@ def signup(credentials: Credentials, request: Request, response: Response):
     try:
         user = create_user(email, hash_password(credentials.password))
         _start_session(response, user)
+        record_activity("signup", actor=user, ip=_client_ip(request))
     except EmailTaken:
         raise HTTPException(status_code=409, detail="An account with that email already exists.")
     except SQLAlchemyError:
@@ -125,6 +128,13 @@ def login(credentials: Credentials, request: Request, response: Response):
     if not found or not password_ok:
         for key in keys:
             limiter.record(key, LOGIN_WINDOW)
+        record_activity(
+            "login_failed",
+            actor=found[0] if found else None,
+            actor_email=email,
+            detail="Wrong password" if found else "No such account",
+            ip=_client_ip(request),
+        )
         raise HTTPException(status_code=401, detail=_BAD_LOGIN)
 
     for key in list(keys)[:1]:  # a good login clears only this client's own counter
@@ -133,6 +143,7 @@ def login(credentials: Credentials, request: Request, response: Response):
 
     try:
         _start_session(response, user)
+        record_activity("login", actor=user, ip=_client_ip(request))
     except SQLAlchemyError:
         logger.exception("Could not create session")
         raise HTTPException(status_code=503, detail="Couldn't sign in right now, please try again.")
@@ -141,11 +152,18 @@ def login(credentials: Credentials, request: Request, response: Response):
 
 
 @router.post("/logout", status_code=204)
-def logout(response: Response, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+def logout(
+    request: Request,
+    response: Response,
+    session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+):
 
     if session:
         try:
+            who = get_user_by_token(session)
             delete_session(session)
+            if who:
+                record_activity("logout", actor=who, ip=_client_ip(request))
         except SQLAlchemyError:
             logger.exception("Could not delete session")
 

@@ -117,10 +117,9 @@ function Message({ role, question, response, error, fresh, isLast, onRegenerate,
         </div>
 
         <div className="message-meta">
-          {response.cache_hit && <span className="message-cache-badge">Cached</span>}
-          {totalMs != null && <span className="message-latency">{formatMs(totalMs)}</span>}
           <button type="button" className="text-button" onClick={copyAnswer}>
-            {copied ? "Copied" : "Copy answer"}
+            <Icon name={copied ? "check" : "copy"} size={14} />
+            {copied ? "Copied" : "Copy text"}
           </button>
           {isLast && (
             <>
@@ -134,6 +133,8 @@ function Message({ role, question, response, error, fresh, isLast, onRegenerate,
               </button>
             </>
           )}
+          {response.cache_hit && <span className="message-cache-badge">Cached</span>}
+          {totalMs != null && <span className="message-latency">{formatMs(totalMs)}</span>}
           {hasDetails && (
             <button
               type="button"

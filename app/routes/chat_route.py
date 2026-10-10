@@ -16,6 +16,7 @@ from app.services.permissions import has_permission
 from app.timing import Timings
 from app.guardrails.errors import GuardrailError
 from app.guardrails.sql_guard import validate_write_sql
+from app.models.activity_model import record_activity
 from app.models.audit_model import record_change
 from app.models.connection_model import DatabaseConnectionError, get_or_default
 from app.models.history_model import save_message
@@ -163,6 +164,10 @@ def confirm_change(
 
     logger.info("User %s changed %s rows on %s: %s", user.id, rows, connection.label, sql)
     background_tasks.add_task(record_change, user.id, user.email, connection.label, sql, rows)
+    background_tasks.add_task(
+        record_activity, "data_changed", actor=user,
+        detail=f"{rows} row{'s' if rows != 1 else ''} on {connection.label}: {sql}",
+    )
     # Answers cached before this change are stale: everyone's if the shared
     # demo database changed, otherwise just this admin's.
     background_tasks.add_task(clear_cached_responses, None if connection.is_default else owner)

@@ -201,3 +201,16 @@ export function getUserMessages(userId, conversationId) {
 export function confirmChange(token) {
   return postJson("/chat/confirm-change", { token }, "Couldn't apply the change");
 }
+
+export function getActivity({ events = [], q = "", before } = {}) {
+  const params = new URLSearchParams();
+  events.forEach((event) => params.append("event", event));
+  if (q) params.set("q", q);
+  if (before) params.set("before", String(before));
+  const query = params.toString();
+  return request(`/admin/activity${query ? `?${query}` : ""}`, undefined, "Failed to load activity");
+}
+
+export function getActivitySummary() {
+  return request("/admin/activity/summary", undefined, "Failed to load the summary");
+}

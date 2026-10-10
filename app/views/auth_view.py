@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.models.activity_model import ActivityEntry
 from app.services.auth_service import MAX_PASSWORD_LENGTH
 
 
@@ -27,3 +28,8 @@ class AccountInfo(BaseModel):
 
 class RoleChange(BaseModel):
     role: Literal["user", "supervisor", "admin"]
+
+
+class ActivityPage(BaseModel):
+    entries: list[ActivityEntry]
+    has_more: bool

@@ -20,7 +20,9 @@ import Icon from "./components/Icon";
 import Message from "./components/Message";
 import Progress, { stageKeyFor } from "./components/Progress";
 import Rail from "./components/Rail";
-import UsersPanel, { can } from "./components/UsersPanel";
+import ActivityPage from "./components/ActivityPage";
+import UsersPage from "./components/UsersPage";
+import { can } from "./permissions";
 
 // The product name shown in the browser tab; change it here and in index.html.
 const APP_NAME = "Askbase";
@@ -83,7 +85,7 @@ function ChatApp({ user, onSignedOut }) {
   const [followups, setFollowups] = useState([]);
   const [railOpen, setRailOpen] = useState(false);
   const [dbOpen, setDbOpen] = useState(false);
-  const [usersOpen, setUsersOpen] = useState(false);
+  const [view, setView] = useState("chat"); // chat | users | activity
 
   const bottomRef = useRef(null);
   const composerRef = useRef(null);
@@ -203,18 +205,27 @@ function ChatApp({ user, onSignedOut }) {
     const shell = shellRef.current;
     if (!shell) return;
 
-    const chat = shell.querySelector(".chat");
+    const main = shell.querySelectorAll(".chat, .page");
     const rail = shell.querySelector(".rail");
     const narrow = window.matchMedia("(max-width: 900px)").matches;
 
-    chat.inert = dbOpen || (railOpen && narrow);
+    main.forEach((node) => {
+      node.inert = dbOpen || (railOpen && narrow);
+    });
     rail.inert = dbOpen;
 
     return () => {
-      chat.inert = false;
+      main.forEach((node) => {
+        node.inert = false;
+      });
       rail.inert = false;
     };
-  }, [railOpen, dbOpen]);
+  }, [railOpen, dbOpen, view]);
+
+  const adminItems = [
+    can(user, "users:read") && { id: "users", label: "Users", icon: "users" },
+    can(user, "activity:read") && { id: "activity", label: "Activity", icon: "activity" },
+  ].filter(Boolean);
 
   const lastExchange = [...timeline].reverse().find((item) => item.type === "exchange");
 
@@ -381,21 +392,36 @@ function ChatApp({ user, onSignedOut }) {
     <div className="app-shell" ref={shellRef}>
       <Rail
         conversations={conversations}
-        activeId={activeId}
+        activeId={view === "chat" ? activeId : null}
         loading={conversationsLoading}
         locked={sending}
         user={user}
         open={railOpen}
         onClose={closeRail}
-        onNew={startNewChat}
-        onSelect={openConversation}
+        onNew={() => {
+          setView("chat");
+          startNewChat();
+        }}
+        onSelect={(id) => {
+          setView("chat");
+          openConversation(id);
+        }}
         onRename={handleRename}
         onDelete={handleDelete}
         onSignOut={handleSignOut}
-        onUsers={can(user, "users:read") ? () => setUsersOpen(true) : undefined}
+        view={view}
+        adminItems={adminItems}
+        onNavigate={(id) => {
+          setView(id);
+          setRailOpen(false);
+        }}
       />
 
-      <main className="chat" data-stage={sending ? stageKeyFor(stage) : undefined}>
+      <main
+        className="chat"
+        hidden={view !== "chat"}
+        data-stage={sending ? stageKeyFor(stage) : undefined}
+      >
         <header className="chat-bar">
           <button
             ref={menuButtonRef}
@@ -529,22 +555,23 @@ function ChatApp({ user, onSignedOut }) {
         />
       </main>
 
-      {usersOpen && (
-        <>
-          <div className="scrim" onClick={() => setUsersOpen(false)} aria-hidden="true" />
-          <div className="drawer drawer-wide" role="dialog" aria-modal="true" aria-label="Users">
-            <button
-              type="button"
-              className="icon-button drawer-close"
-              aria-label="Close users panel"
-              onClick={() => setUsersOpen(false)}
-              autoFocus
-            >
-              <Icon name="close" />
-            </button>
-            <UsersPanel me={user} onUnauthorized={onSignedOut} />
-          </div>
-        </>
+      {view !== "chat" && (
+        <main className="page">
+          {view === "users" && (
+            <UsersPage
+              me={user}
+              onOpenRail={() => setRailOpen(true)}
+              onUnauthorized={onSignedOut}
+            />
+          )}
+          {view === "activity" && (
+            <ActivityPage
+              me={user}
+              onOpenRail={() => setRailOpen(true)}
+              onUnauthorized={onSignedOut}
+            />
+          )}
+        </main>
       )}
 
       {dbOpen && (

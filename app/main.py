@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.models.activity_model import ensure_activity_schema
 from app.models.audit_model import ensure_audit_schema
 from app.models.connection_model import ensure_connections_schema, init_default_connection
 from app.models.history_model import ensure_chat_history_schema
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
     _ensure_schema(ensure_users_schema, "Accounts")
     _ensure_schema(_seed_admin, "Admin seed")
     _ensure_schema(ensure_audit_schema, "Change log")
+    _ensure_schema(ensure_activity_schema, "Activity log")
     _ensure_schema(ensure_chat_history_schema, "Chat history")
     _ensure_schema(ensure_connections_schema, "Saved connections")
 

@@ -1,13 +1,21 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.controllers import chat_controller
 from app.controllers.chat_controller import ConversationNotFound
 from app.dependencies import owner_key, require_permission
 from app.models.connection_model import forget_connection
-from app.models.conversation_model import list_conversations
+from app.models.activity_model import (
+    EVENTS,
+    ActivityEntry,
+    ActivitySummary,
+    activity_summary,
+    list_activity,
+    record_activity,
+)
+from app.models.conversation_model import get_conversation, list_conversations
 from app.models.user_model import (
     LastAdmin,
     User,
@@ -16,7 +24,7 @@ from app.models.user_model import (
     remove_user,
     set_role,
 )
-from app.views.auth_view import AccountInfo, RoleChange
+from app.views.auth_view import AccountInfo, ActivityPage, RoleChange
 from app.views.chat_view import HistoryEntry
 from app.views.conversation_view import ConversationInfo
 
@@ -26,6 +34,10 @@ router = APIRouter(prefix="/admin")
 
 _NO_USER = HTTPException(status_code=404, detail="User not found.")
 _LAST_ADMIN = HTTPException(status_code=409, detail="There must be at least one admin.")
+
+
+def _ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
 
 
 def _account(user: User) -> AccountInfo:
@@ -41,6 +53,7 @@ def users(_: User = Depends(require_permission("users:read"))):
 def change_role(
     user_id: int,
     change: RoleChange,
+    request: Request,
     admin: User = Depends(require_permission("users:write")),
 ):
 
@@ -56,14 +69,21 @@ def change_role(
         raise _NO_USER
 
     logger.info("Admin %s set user %s to role %s", admin.id, user.id, user.role)
+    record_activity(
+        "role_changed", actor=admin, target=user, detail=f"Now {user.role}", ip=_ip(request)
+    )
     return _account(user)
 
 
 @router.delete("/users/{user_id}", status_code=204)
-def delete_user(user_id: int, admin: User = Depends(require_permission("users:write"))):
+def delete_user(
+    user_id: int, request: Request, admin: User = Depends(require_permission("users:write"))
+):
 
     if user_id == admin.id:
         raise HTTPException(status_code=400, detail="You can't delete your own account.")
+
+    victim = get_user(user_id)
 
     try:
         deleted = remove_user(user_id)
@@ -75,15 +95,31 @@ def delete_user(user_id: int, admin: User = Depends(require_permission("users:wr
 
     forget_connection(f"u:{user_id}")
     logger.info("Admin %s deleted user %s", admin.id, user_id)
+    record_activity(
+        "user_deleted",
+        actor=admin,
+        target=victim,
+        detail=f"Deleted {victim.email}" if victim else None,
+        ip=_ip(request),
+    )
 
 
 @router.get("/users/{user_id}/conversations", response_model=list[ConversationInfo])
-def user_conversations(user_id: int, _: User = Depends(require_permission("conversation:read_any"))):
+def user_conversations(
+    user_id: int,
+    request: Request,
+    viewer: User = Depends(require_permission("conversation:read_any")),
+):
 
     target = get_user(user_id)
 
     if target is None:
         raise _NO_USER
+
+    record_activity(
+        "chat_viewed", actor=viewer, target=target, detail="Browsed their conversation list",
+        ip=_ip(request),
+    )
 
     return list_conversations(owner_key(target))
 
@@ -96,7 +132,8 @@ def user_conversations(user_id: int, _: User = Depends(require_permission("conve
 def user_messages(
     user_id: int,
     conversation_id: int,
-    _: User = Depends(require_permission("conversation:read_any")),
+    request: Request,
+    viewer: User = Depends(require_permission("conversation:read_any")),
 ):
     """Read-only: there is deliberately no write route for another user's chats."""
 
@@ -106,9 +143,40 @@ def user_messages(
         raise _NO_USER
 
     try:
-        return chat_controller.get_chat_history(owner_key(target), conversation_id)
+        entries = chat_controller.get_chat_history(owner_key(target), conversation_id)
     except ConversationNotFound:
         raise HTTPException(status_code=404, detail="Conversation not found.")
     except SQLAlchemyError:
         logger.exception("Chat history read error")
         raise HTTPException(status_code=400, detail="Chat history read error.")
+
+    conversation = get_conversation(owner_key(target), conversation_id)
+    record_activity(
+        "chat_viewed",
+        actor=viewer,
+        target=target,
+        detail=f"Opened \u201c{conversation.title}\u201d" if conversation else None,
+        ip=_ip(request),
+    )
+
+    return entries
+
+
+@router.get("/activity", response_model=ActivityPage)
+def activity(
+    event: list[str] = Query(default=[]),
+    q: str | None = Query(default=None, max_length=100),
+    before: int | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    _: User = Depends(require_permission("activity:read")),
+):
+
+    events = [e for e in event if e in EVENTS]
+    entries, has_more = list_activity(events or None, (q or "").strip() or None, before, limit)
+
+    return ActivityPage(entries=entries, has_more=has_more)
+
+
+@router.get("/activity/summary", response_model=ActivitySummary)
+def activity_overview(_: User = Depends(require_permission("activity:read"))):
+    return activity_summary()

@@ -2,6 +2,8 @@ import { memo, useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import AppearanceMenu from "./AppearanceMenu";
 
+const ROLE_LABEL = { user: "User", supervisor: "Supervisor", admin: "Admin" };
+
 const GROUPS = ["Today", "Yesterday", "Previous 7 days", "Earlier"];
 
 function groupOf(isoDate) {
@@ -140,7 +142,9 @@ function Rail({
   onRename,
   onDelete,
   onSignOut,
-  onUsers,
+  view,
+  adminItems,
+  onNavigate,
 }) {
   const grouped = GROUPS.map((name) => ({
     name,
@@ -201,19 +205,48 @@ function Rail({
           ))}
         </nav>
 
+        {adminItems.length > 0 && (
+          <nav className="rail-nav" aria-label="Administration">
+            {adminItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="rail-nav-item"
+                aria-current={view === item.id ? "page" : undefined}
+                onClick={() => onNavigate(item.id)}
+              >
+                <Icon name={item.icon} size={16} />
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
         <div className="sidebar-account">
-          <span className="sidebar-account-email" title={user.email}>
-            {user.email}
+          <span className="avatar" aria-hidden="true">
+            {user.email.charAt(0).toUpperCase()}
           </span>
-          <span className="users-role" title="Your role">{user.role}</span>
-          {onUsers && (
-            <button type="button" className="sidebar-link-button" onClick={onUsers}>
-              Users
-            </button>
-          )}
+          <div className="account-text">
+            <span className="account-email" title={user.email}>
+              {user.email.split("@")[0]}
+              {user.email.includes("@") && (
+                <>
+                  @<wbr />
+                  {user.email.split("@").slice(1).join("@")}
+                </>
+              )}
+            </span>
+            <span className="account-role">{ROLE_LABEL[user.role] ?? user.role}</span>
+          </div>
           <AppearanceMenu />
-          <button type="button" className="sidebar-link-button" onClick={onSignOut}>
-            Sign out
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Sign out"
+            title="Sign out"
+            onClick={onSignOut}
+          >
+            <Icon name="logout" size={18} />
           </button>
         </div>
       </aside>
