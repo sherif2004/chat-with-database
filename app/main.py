@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.models.connection_model import ensure_connections_schema, init_default_connection
 from app.models.history_model import ensure_chat_history_schema
-from app.routes import chat_route, connection_route
+from app.models.user_model import ensure_users_schema
+from app.routes import auth_route, chat_route, connection_route
+from app.config import settings
 from app.services import example_service
 
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +30,7 @@ async def lifespan(app: FastAPI):
     init_default_connection()
     example_service.load_examples()
 
+    _ensure_schema(ensure_users_schema, "Accounts")
     _ensure_schema(ensure_chat_history_schema, "Chat history")
     _ensure_schema(ensure_connections_schema, "Saved connections")
 
@@ -38,10 +41,12 @@ app = FastAPI(title="Chat With Database", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth_route.router)
 app.include_router(chat_route.router)
 app.include_router(connection_route.router)

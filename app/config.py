@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     qdrant_collection: str = "chat_examples"
     few_shot_min_score: float = 0.6
 
+    # Signs nothing; used to derive the key that encrypts saved database URLs
+    # at rest. Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    app_secret_key: str | None = None
+    session_ttl_days: int = 14
+    cookie_secure: bool = False
+    cors_origins: str = "http://localhost:5173"
+
     redis_url: str = "redis://localhost:6379/0"
     cache_ttl_seconds: int = 3600
 

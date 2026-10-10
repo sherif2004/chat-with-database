@@ -33,6 +33,7 @@ export default function SchemaTree({ tables }) {
       <input
         type="text"
         className="schema-filter"
+        aria-label="Filter tables or columns"
         placeholder="Filter tables or columns..."
         value={filter}
         onChange={(event) => setFilter(event.target.value)}
@@ -55,9 +56,13 @@ export default function SchemaTree({ tables }) {
               <button
                 type="button"
                 className="schema-table-header"
+                aria-expanded={isOpen}
                 onClick={() => toggle(table.name)}
               >
-                <span className={`schema-caret ${isOpen ? "schema-caret-open" : ""}`}>
+                <span
+                  className={`schema-caret ${isOpen ? "schema-caret-open" : ""}`}
+                  aria-hidden="true"
+                >
                   ▸
                 </span>
                 <span className="schema-table-name">{table.name}</span>

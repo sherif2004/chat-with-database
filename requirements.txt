@@ -10,3 +10,4 @@ pydantic-settings
 qdrant-client
 redis
 langgraph
+cryptography

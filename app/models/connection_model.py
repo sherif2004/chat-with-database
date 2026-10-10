@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.database import app_engine, run_ddl, run_or_log
 from app.models.schema_model import DatabaseSchema, get_database_schema, schema_to_text
+from app.services.crypto_service import SecretKeyMissing, decrypt, encrypt
 
 logger = logging.getLogger(__name__)
 
@@ -99,14 +100,18 @@ def _make_connection(engine: Engine, schema: DatabaseSchema, label: str) -> Sess
 
 
 def ensure_connections_schema() -> None:
-    """Create the app.connections table if it doesn't exist yet."""
+    """Create the app.user_connections table if it doesn't exist yet.
+
+    `session_id` holds the signed-in user's id. URLs are stored encrypted
+    (see crypto_service); the older plaintext app.connections table is no
+    longer read."""
 
     run_ddl(
         "CREATE SCHEMA IF NOT EXISTS app",
         """
-        CREATE TABLE IF NOT EXISTS app.connections (
+        CREATE TABLE IF NOT EXISTS app.user_connections (
             session_id TEXT PRIMARY KEY,
-            database_url TEXT NOT NULL,
+            database_url_encrypted TEXT NOT NULL,
             label TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -136,20 +141,20 @@ def get_default_connection() -> SessionConnection:
     return _default_connection
 
 
-def _save_connection_row(session_id: str, database_url: str, label: str) -> None:
+def _save_connection_row(session_id: str, encrypted_url: str, label: str) -> None:
 
     def run():
         with app_engine.begin() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO app.connections (session_id, database_url, label, updated_at)
+                    INSERT INTO app.user_connections (session_id, database_url_encrypted, label, updated_at)
                     VALUES (:session_id, :database_url, :label, now())
                     ON CONFLICT (session_id) DO UPDATE SET
-                        database_url = EXCLUDED.database_url,
+                        database_url_encrypted = EXCLUDED.database_url_encrypted,
                         label = EXCLUDED.label,
                         updated_at = now()
                 """),
-                {"session_id": session_id, "database_url": database_url, "label": label},
+                {"session_id": session_id, "database_url": encrypted_url, "label": label},
             )
 
     run_or_log(run, logger, "Could not save connection for session %s: %s", session_id)
@@ -160,16 +165,32 @@ def _load_saved_url(session_id: str) -> str | None:
     def run():
         with app_engine.connect() as conn:
             row = conn.execute(
-                text("SELECT database_url FROM app.connections WHERE session_id = :session_id"),
+                text("SELECT database_url_encrypted FROM app.user_connections WHERE session_id = :session_id"),
                 {"session_id": session_id},
             ).first()
-            return row.database_url if row else None
+            return row.database_url_encrypted if row else None
 
-    return run_or_log(run, logger, "Could not read saved connection for session %s: %s", session_id)
+    encrypted = run_or_log(run, logger, "Could not read saved connection for session %s: %s", session_id)
+
+    if encrypted is None:
+        return None
+
+    try:
+        url = decrypt(encrypted)
+    except SecretKeyMissing:
+        logger.warning("APP_SECRET_KEY is not set; ignoring saved connection for session %s", session_id)
+        return None
+
+    if url is None:
+        logger.warning("Saved connection for session %s could not be decrypted", session_id)
+
+    return url
 
 
 def connect(session_id: str, database_url: str, label: str | None = None) -> SessionConnection:
     """Connect a session to a new database, replacing any existing one."""
+
+    encrypted_url = encrypt(database_url)  # fails fast if APP_SECRET_KEY is unset
 
     engine, schema = _connect_and_introspect(database_url)
     resolved_label = label or _label_for(database_url)
@@ -180,7 +201,7 @@ def connect(session_id: str, database_url: str, label: str | None = None) -> Ses
 
     connection = _make_connection(engine, schema, resolved_label)
     _cache[session_id] = connection
-    _save_connection_row(session_id, database_url, resolved_label)
+    _save_connection_row(session_id, encrypted_url, resolved_label)
 
     return connection
 

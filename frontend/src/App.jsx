@@ -1,16 +1,42 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  AuthError,
   connectDatabase,
   getConnectionStatus,
+  getCurrentUser,
   getHistory,
+  logOut,
   sendMessage,
 } from "./api";
-import { getSessionId } from "./session";
+import AuthScreen from "./components/AuthScreen";
 import Message from "./components/Message";
 import Sidebar from "./components/Sidebar";
 
+let nextId = 0;
+const newId = () => ++nextId;
+
 export default function App() {
-  const [sessionId] = useState(getSessionId);
+  // undefined = checking the session, null = signed out.
+  const [user, setUser] = useState(undefined);
+
+  useEffect(() => {
+    getCurrentUser()
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, []);
+
+  if (user === undefined) {
+    return <div className="auth-loading" role="status">Loading…</div>;
+  }
+
+  if (user === null) {
+    return <AuthScreen onAuthenticated={setUser} />;
+  }
+
+  return <ChatApp user={user} onSignedOut={() => setUser(null)} />;
+}
+
+function ChatApp({ user, onSignedOut }) {
   const [timeline, setTimeline] = useState([]);
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
@@ -19,10 +45,11 @@ export default function App() {
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    getHistory(sessionId)
+    getHistory()
       .then((entries) => {
         setTimeline(
           entries.map((entry) => ({
+            id: newId(),
             type: "exchange",
             question: entry.question,
             response: entry.response,
@@ -30,19 +57,22 @@ export default function App() {
           }))
         );
       })
-      .catch(() => {
-        // No history yet, or the store is unreachable — start with an empty chat.
+      .catch((error) => {
+        if (error instanceof AuthError) onSignedOut();
+        // Otherwise: no history yet, or the store is unreachable — start empty.
       });
 
-    getConnectionStatus(sessionId)
+    getConnectionStatus()
       .then(setConnection)
-      .catch(() => {
-        // Sidebar just shows "Loading..." until this succeeds on retry.
+      .catch((error) => {
+        if (error instanceof AuthError) onSignedOut();
+        // Otherwise the sidebar just shows "Loading..." until this succeeds.
       });
-  }, [sessionId]);
+  }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    bottomRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
   }, [timeline, sending]);
 
   async function handleSubmit(event) {
@@ -55,15 +85,25 @@ export default function App() {
     setSending(true);
 
     try {
-      const response = await sendMessage(sessionId, trimmed);
+      const response = await sendMessage(trimmed);
       setTimeline((prev) => [
         ...prev,
-        { type: "exchange", question: trimmed, response, error: false },
+        { id: newId(), type: "exchange", question: trimmed, response, error: false },
       ]);
     } catch (error) {
+      if (error instanceof AuthError) {
+        onSignedOut();
+        return;
+      }
       setTimeline((prev) => [
         ...prev,
-        { type: "exchange", question: trimmed, response: null, error: error.message || true },
+        {
+          id: newId(),
+          type: "exchange",
+          question: trimmed,
+          response: null,
+          error: error.message || true,
+        },
       ]);
     } finally {
       setSending(false);
@@ -74,29 +114,47 @@ export default function App() {
     setConnecting(true);
 
     try {
-      const info = await connectDatabase(sessionId, databaseUrl, label);
+      const info = await connectDatabase(databaseUrl, label);
       setConnection(info);
       setTimeline((prev) => [
         ...prev,
-        { type: "notice", text: `Switched to ${info.label}` },
+        { id: newId(), type: "notice", text: `Switched to ${info.label}` },
       ]);
     } finally {
       setConnecting(false);
     }
   }
 
+  async function handleSignOut() {
+    try {
+      await logOut();
+    } finally {
+      onSignedOut();
+    }
+  }
+
   return (
     <div className="app-shell">
       <Sidebar
+        user={user}
+        onSignOut={handleSignOut}
         connection={connection}
         connecting={connecting}
         onConnect={handleConnect}
       />
 
       <div className="chat">
-        <header className="chat-header">Chat With Database</header>
+        <main className="chat-main">
+        <header>
+          <h1 className="chat-header">Chat With Database</h1>
+        </header>
 
-        <div className="chat-messages">
+        <div
+          className="chat-messages"
+          role="log"
+          aria-live="polite"
+          aria-label="Conversation"
+        >
           {timeline.length === 0 && !sending && (
             <div className="chat-empty">
               <div className="chat-empty-title">Ask me anything about your data</div>
@@ -105,13 +163,13 @@ export default function App() {
               </div>
             </div>
           )}
-          {timeline.map((item, index) =>
+          {timeline.map((item) =>
             item.type === "notice" ? (
-              <div key={index} className="chat-notice">
+              <div key={item.id} className="chat-notice">
                 {item.text}
               </div>
             ) : (
-              <div key={index}>
+              <div key={item.id}>
                 <Message role="user" question={item.question} />
                 <Message role="assistant" response={item.response} error={item.error} />
               </div>
@@ -120,6 +178,7 @@ export default function App() {
           {sending && (
             <div className="message message-assistant">
               <div className="bubble bubble-pending">
+                <span className="sr-only">Working on your answer…</span>
                 <span className="typing-dot" />
                 <span className="typing-dot" />
                 <span className="typing-dot" />
@@ -132,15 +191,18 @@ export default function App() {
         <form className="chat-input" onSubmit={handleSubmit}>
           <input
             type="text"
+            aria-label="Your question"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             placeholder="Ask a question about the data..."
-            disabled={sending}
+            readOnly={sending}
+            aria-busy={sending}
           />
           <button type="submit" disabled={sending}>
             Send
           </button>
         </form>
+        </main>
       </div>
     </div>
   );

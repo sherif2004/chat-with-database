@@ -1,7 +1,7 @@
 import { useState } from "react";
 import SchemaTree from "./SchemaTree";
 
-export default function Sidebar({ connection, connecting, onConnect }) {
+export default function Sidebar({ user, onSignOut, connection, connecting, onConnect }) {
   const [formOpen, setFormOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
@@ -53,6 +53,7 @@ export default function Sidebar({ connection, connecting, onConnect }) {
         <button
           type="button"
           className="sidebar-link-button"
+          aria-expanded={formOpen}
           onClick={() => setFormOpen((open) => !open)}
         >
           {formOpen ? "Cancel" : "Connect a database"}
@@ -61,7 +62,10 @@ export default function Sidebar({ connection, connecting, onConnect }) {
         {formOpen && (
           <form className="connect-form" onSubmit={handleSubmit}>
             <input
-              type="text"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Database connection URL"
               placeholder="postgresql://user:password@host:5432/dbname"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
@@ -70,12 +74,13 @@ export default function Sidebar({ connection, connecting, onConnect }) {
             />
             <input
               type="text"
+              aria-label="Connection label (optional)"
               placeholder="Label (optional)"
               value={label}
               onChange={(event) => setLabel(event.target.value)}
               disabled={connecting}
             />
-            {formError && <div className="connect-error">{formError}</div>}
+            {formError && <div className="connect-error" role="alert">{formError}</div>}
             <button type="submit" disabled={connecting || !url.trim()}>
               {connecting ? "Connecting…" : "Connect"}
             </button>
@@ -90,6 +95,15 @@ export default function Sidebar({ connection, connecting, onConnect }) {
         ) : (
           <div className="schema-empty">Loading schema...</div>
         )}
+      </div>
+
+      <div className="sidebar-account">
+        <span className="sidebar-account-email" title={user.email}>
+          {user.email}
+        </span>
+        <button type="button" className="sidebar-link-button" onClick={onSignOut}>
+          Sign out
+        </button>
       </div>
     </aside>
   );

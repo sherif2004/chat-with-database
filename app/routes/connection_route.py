@@ -1,7 +1,10 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.dependencies import current_user
+from app.models.user_model import User
+from app.services.crypto_service import SecretKeyMissing
 from app.models.connection_model import (
     DatabaseConnectionError,
     connect,
@@ -25,18 +28,22 @@ def _to_connection_info(connection, error: str | None = None) -> ConnectionInfo:
 
 
 @router.post("/connections", response_model=ConnectionInfo, response_model_by_alias=True)
-def create_connection(request: ConnectRequest):
+def create_connection(request: ConnectRequest, user: User = Depends(current_user)):
 
     try:
-        connection = connect(request.session_id, request.database_url, request.label)
+        connection = connect(str(user.id), request.database_url, request.label)
     except DatabaseConnectionError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except SecretKeyMissing as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     return _to_connection_info(connection)
 
 
 @router.get("/connections/current", response_model=ConnectionInfo, response_model_by_alias=True)
-def current_connection(session_id: str):
+def current_connection(user: User = Depends(current_user)):
+
+    session_id = str(user.id)
 
     try:
         return _to_connection_info(get_or_default(session_id))

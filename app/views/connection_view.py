@@ -4,7 +4,6 @@ from app.models.schema_model import DatabaseSchema
 
 
 class ConnectRequest(BaseModel):
-    session_id: str = Field(min_length=1)
     database_url: str = Field(min_length=1)
     label: str | None = None
 

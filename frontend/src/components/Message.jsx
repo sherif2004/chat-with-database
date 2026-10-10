@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { memo, useId, useState } from "react";
 import MessageDetails, { formatMs } from "./MessageDetails";
 
-export default function Message({ role, question, response, error }) {
+function Message({ role, question, response, error }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = useId();
 
   if (role === "user") {
     return (
@@ -17,7 +18,7 @@ export default function Message({ role, question, response, error }) {
   if (error) {
     return (
       <div className="message message-assistant">
-        <div className="bubble bubble-error">
+        <div className="bubble bubble-error" role="alert">
           {typeof error === "string" ? error : "Something went wrong, try again."}
         </div>
       </div>
@@ -58,7 +59,7 @@ export default function Message({ role, question, response, error }) {
                           <tr key={rowIndex}>
                             {row.map((cell, cellIndex) => (
                               <td key={cellIndex} dir="auto">
-                                {String(cell)}
+                                {cell == null ? "—" : String(cell)}
                               </td>
                             ))}
                           </tr>
@@ -82,6 +83,8 @@ export default function Message({ role, question, response, error }) {
             <button
               type="button"
               className="message-details-toggle"
+              aria-expanded={detailsOpen}
+              aria-controls={detailsId}
               onClick={() => setDetailsOpen((open) => !open)}
             >
               {detailsOpen ? "Hide details" : "Details"}
@@ -89,8 +92,12 @@ export default function Message({ role, question, response, error }) {
           </div>
         )}
 
-        {detailsOpen && <MessageDetails response={response} />}
+        <div id={detailsId}>
+          {detailsOpen && <MessageDetails response={response} />}
+        </div>
       </div>
     </div>
   );
 }
+
+export default memo(Message);

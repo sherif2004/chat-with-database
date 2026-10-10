@@ -36,11 +36,13 @@ def _finish(timings, background_tasks, session_id, debug, **fields):
 
 def chat_with_database(
     request: ChatRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    session_id: str,
 ) -> ChatResponse:
+    """`session_id` is the signed-in user's id as a string: the key under
+    which history, the saved connection and cached answers are stored."""
 
     timings = Timings()
-    session_id = request.session_id
     debug = DebugInfo(model=MODEL)
 
     final_state = chat_graph.invoke(

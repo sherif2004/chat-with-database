@@ -38,7 +38,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-`POST /chat` with `{"question": "Which artist has the most albums?", "session_id": "<any client-generated id>"}`
+`POST /chat` with `{"question": "Which artist has the most albums?"}` and the session cookie from `POST /auth/login`
 
 ## Frontend (UI + chat history)
 
@@ -49,10 +49,21 @@ npm run dev
 ```
 
 Opens a React chat UI at `http://localhost:5173`, talking to the backend at
-`http://localhost:8000`. Each browser gets an anonymous `session_id`
-(stored in `localStorage`) — chat history is persisted server-side, in a
+`http://localhost:8000`. Chat history is stored per signed-in user, server-side, in a
 separate `app.chat_history` table (not `public`, so it never leaks into the
 text-to-SQL schema), and restored on reload.
+
+## Accounts
+
+Sign-up and login are built in and stored in the same Postgres database, in the `app` schema (`app.users`, `app.user_sessions`).
+
+- Passwords are hashed with scrypt. Login sets an `httpOnly`, `SameSite=Lax` session cookie; the server stores only a SHA-256 of the token, so sessions can be revoked (logout deletes the row).
+- Every `/chat` and `/connections` route requires the cookie. The user is read from the session, never from the request body, so one user cannot read another's history or connection.
+- Saved database URLs are encrypted at rest (Fernet) in `app.user_connections`. This needs `APP_SECRET_KEY`; without it, connecting a custom database is refused. The old plaintext `app.connections` table is no longer read and can be dropped.
+- Failed logins are throttled (5 per 15 minutes per IP + email, in memory).
+- Set `COOKIE_SECURE=true` behind HTTPS and `CORS_ORIGINS` to your frontend origin(s).
+
+Endpoints: `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`.
 
 ## Flow
 

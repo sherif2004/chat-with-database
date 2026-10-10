@@ -1,9 +1,11 @@
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.controllers import chat_controller
+from app.dependencies import current_user
+from app.models.user_model import User
 from app.services.llm_service import LLMUnavailable
 from app.views.chat_view import ChatRequest, ChatResponse, HistoryEntry
 
@@ -13,10 +15,14 @@ router = APIRouter()
 
 
 @router.post("/chat", response_model=ChatResponse, response_model_exclude_none=True)
-def chat(request: ChatRequest, background_tasks: BackgroundTasks):
+def chat(
+    request: ChatRequest,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(current_user),
+):
 
     try:
-        return chat_controller.chat_with_database(request, background_tasks)
+        return chat_controller.chat_with_database(request, background_tasks, str(user.id))
 
     except SQLAlchemyError:
         logger.exception("SQL execution error")
@@ -31,10 +37,10 @@ def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
 
 @router.get("/chat/history", response_model=list[HistoryEntry])
-def chat_history(session_id: str):
+def chat_history(user: User = Depends(current_user)):
 
     try:
-        return chat_controller.get_chat_history(session_id)
+        return chat_controller.get_chat_history(str(user.id))
 
     except SQLAlchemyError:
         logger.exception("Chat history read error")
