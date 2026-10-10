@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
@@ -7,16 +8,23 @@ from app.graphs.chat_graph import chat_graph
 from app.models.conversation_model import (
     create_conversation,
     get_conversation,
-    rename_conversation,
+    set_generated_title,
     title_from_question,
 )
 from app.models.history_model import delete_last_exchange, get_history, save_message
 from app.services.cache_service import set_cached_response
 from app.services.llm_service import MODEL
+from app.services.title_service import generate_title
 from app.timing import Timings
 from app.views.chat_view import ChatRequest, ChatResponse, DebugInfo, HistoryEntry
 
 logger = logging.getLogger(__name__)
+
+PLACEHOLDER_TITLE = "New chat"
+_TITLE_WAIT_SECONDS = 4
+
+# Chat titles are written by the light model, in parallel with the answer.
+_title_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-title")
 
 
 class ConversationNotFound(Exception):
@@ -46,6 +54,23 @@ def _finish(timings, background_tasks, session_id, conversation_id, debug, **fie
     return response
 
 
+def _apply_title(title_future, placeholder, session_id, conversation_id) -> None:
+    """Give a new chat its generated title; keep the placeholder if the
+    model is slow, unavailable, or the user already renamed the chat."""
+
+    if title_future is None:
+        return
+
+    try:
+        title = title_future.result(timeout=_TITLE_WAIT_SECONDS)
+    except Exception:
+        logger.warning("Chat title not ready; keeping the placeholder")
+        return
+
+    if title:
+        set_generated_title(session_id, conversation_id, placeholder, title)
+
+
 def chat_with_database(
     request: ChatRequest,
     background_tasks: BackgroundTasks,
@@ -58,19 +83,25 @@ def chat_with_database(
     timings = timings or Timings()
     debug = DebugInfo(model=MODEL)
 
+    placeholder = None  # set while this chat still needs a title
+
     if request.conversation_id is None:
-        conversation_id = create_conversation(
-            session_id, title_from_question(request.question)
-        ).id
+        placeholder = title_from_question(request.question)
+        conversation_id = create_conversation(session_id, placeholder).id
     else:
         conversation = get_conversation(session_id, request.conversation_id)
         if conversation is None:
             raise ConversationNotFound()
         conversation_id = conversation.id
-        if conversation.title == "New chat":
-            rename_conversation(session_id, conversation_id, title_from_question(request.question))
+        if conversation.title == PLACEHOLDER_TITLE:
+            placeholder = PLACEHOLDER_TITLE
         if request.replace_last:
             delete_last_exchange(session_id, conversation_id)
+
+    # Start naming the chat now so it finishes alongside the answer.
+    title_future = (
+        _title_pool.submit(generate_title, request.question) if placeholder else None
+    )
 
     final_state = chat_graph.invoke(
         {
@@ -88,6 +119,8 @@ def chat_with_database(
             }
         },
     )
+
+    _apply_title(title_future, placeholder, session_id, conversation_id)
 
     if final_state.get("cache_hit"):
         cached = final_state["cached_response"]

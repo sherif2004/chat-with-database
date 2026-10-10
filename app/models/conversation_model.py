@@ -85,6 +85,25 @@ def get_conversation(owner: str, conversation_id: int) -> Conversation | None:
     return retry_on_disconnect(run)
 
 
+def set_generated_title(
+    owner: str, conversation_id: int, placeholder: str, title: str
+) -> None:
+    """Replace the placeholder title, but only if the user hasn't already
+    renamed the chat in the meantime."""
+
+    def run():
+        with app_engine.begin() as conn:
+            conn.execute(
+                text("""
+                    UPDATE app.conversations SET title = :title
+                    WHERE id = :id AND owner = :owner AND title = :placeholder
+                """),
+                {"id": conversation_id, "owner": owner, "title": title, "placeholder": placeholder},
+            )
+
+    retry_on_disconnect(run)
+
+
 def rename_conversation(owner: str, conversation_id: int, title: str) -> Conversation | None:
 
     def run():
