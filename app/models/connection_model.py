@@ -6,7 +6,7 @@ from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.dialects import POSTGRES, Dialect, UnsupportedDatabase, for_url, require_installed
-from app.dialects.network import PrivateHostBlocked, check_host, verify_peer
+from app.dialects.network import PrivateHostBlocked, check_host, pin_to_public_address, verify_peer
 from app.models.database import app_engine, run_ddl, run_or_log
 from app.models.schema_model import DatabaseSchema, default_schema_name, get_database_schema, schema_to_text
 from app.services.crypto_service import SecretKeyMissing, decrypt, encrypt
@@ -54,7 +54,8 @@ def _build_engine(database_url: str | URL) -> tuple[Engine, Dialect]:
         url = make_url(database_url) if isinstance(database_url, str) else database_url
         dialect = for_url(url)
         require_installed(dialect)
-        check_host(url.host)
+        if dialect.network_host:
+            check_host(url.host)
     except (UnsupportedDatabase, PrivateHostBlocked) as e:
         raise DatabaseConnectionError(str(e))
     except Exception as e:
@@ -62,7 +63,9 @@ def _build_engine(database_url: str | URL) -> tuple[Engine, Dialect]:
 
     try:
         engine = create_engine(url, pool_recycle=300, connect_args=dict(dialect.connect_args))
-        event.listen(engine, "connect", verify_peer)
+        if dialect.network_host:
+            event.listen(engine, "do_connect", pin_to_public_address)
+            event.listen(engine, "connect", verify_peer, insert=True)
     except Exception as e:
         raise DatabaseConnectionError(f"Could not set up that connection: {e}")
 

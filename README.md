@@ -239,7 +239,7 @@ Supervisors and admins open the database panel and choose **Connect a database**
 - **Engines that can't enforce read-only:** the SQL guard still lets only `SELECT` through, but connect with a database account that has read-only permission. The page shows a reminder.
 - **Data changes through chat** (admin preview and confirm) work on PostgreSQL only.
 - **Not supported:** SQLite and other embedded databases (the "host" would be a file on the server), and NoSQL databases.
-- **Private networks are blocked by default.** The server refuses hosts that resolve to private, loopback or link-local addresses, and checks the address a connection really reaches, so it can't be used to reach internal services. If your databases live on a private network, set `BLOCK_PRIVATE_HOSTS=false`.
+- **Private networks are blocked by default.** The server refuses hosts that resolve to private, loopback or link-local addresses. For each new connection it resolves the host once, vets the address, and connects to exactly that address, so a DNS answer that changes in between can't redirect it. Drivers whose target can't be pinned are refused while blocking is on. If your databases live on a private network, set `BLOCK_PRIVATE_HOSTS=false`.
 - **Connection URL options are allowlisted per engine** (for example `sslmode` for PostgreSQL or `warehouse` for Snowflake). Options that read local files or change the host are refused.
 - Only PostgreSQL and MySQL have been tested against live servers. The other engines are untested.
 

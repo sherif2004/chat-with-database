@@ -70,6 +70,8 @@ class Dialect:
     read_only_enforced: bool = False
     supports_writes: bool = False
     needs_host: bool = True
+    # False when the "host" is an account or project id, not a network name.
+    network_host: bool = True
     quote: str = '"'
     limit_hint: str = "add a LIMIT"
     forbidden_prefixes: tuple[str, ...] = ()
@@ -139,7 +141,7 @@ MSSQL = Dialect(
 SNOWFLAKE = Dialect(
     key="snowflake", name="Snowflake", backend="snowflake", driver="snowflake",
     module="snowflake.sqlalchemy", package="snowflake-sqlalchemy", sqlglot="snowflake",
-    curated=True, limit_hint="add a LIMIT",
+    curated=True, network_host=False, limit_hint="add a LIMIT",
     allowed_query=frozenset({"warehouse", "role", "schema"}),
     prepare=_snowflake_prepare,
 )
@@ -147,7 +149,7 @@ SNOWFLAKE = Dialect(
 BIGQUERY = Dialect(
     key="bigquery", name="BigQuery", backend="bigquery", driver="bigquery",
     module="sqlalchemy_bigquery", package="sqlalchemy-bigquery", sqlglot="bigquery",
-    curated=True, needs_host=False, quote="`", limit_hint="add a LIMIT",
+    curated=True, needs_host=False, network_host=False, quote="`", limit_hint="add a LIMIT",
     allowed_query=frozenset({"credentials_base64", "location"}),
 )
 
