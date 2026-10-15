@@ -14,7 +14,7 @@
 
 </div>
 
-Askbase turns each question into a safe, read-only SQL query, runs it, and answers in plain language. A demo database (Chinook) is included, and supervisors and admins can connect their own. Accounts have roles, admins get an activity dashboard, and any data change goes through a preview and an explicit confirmation.
+Askbase turns each question into a safe, read-only SQL query, runs it, and answers in plain language. A demo database (Chinook) is included, and supervisors and admins can connect their own, on PostgreSQL, MySQL, SQL Server, Snowflake and more. Accounts have roles, admins get an activity dashboard, and any data change goes through a preview and an explicit confirmation.
 
 ## Contents
 
@@ -27,6 +27,7 @@ Askbase turns each question into a safe, read-only SQL query, runs it, and answe
   - [Admin data changes](#admin-data-changes)
   - [Response shapes](#response-shapes)
 - [Getting started](#getting-started)
+- [Connecting your own database](#connecting-your-own-database)
 - [Configuration](#configuration)
 - [Hybrid models](#hybrid-models)
 - [Accounts, roles and security](#accounts-roles-and-security)
@@ -58,7 +59,7 @@ Askbase turns each question into a safe, read-only SQL query, runs it, and answe
 | Backend | Python, FastAPI, SQLAlchemy |
 | Pipeline | LangGraph (`StateGraph`), sqlglot for SQL validation |
 | Models | Azure OpenAI (a capable and a cheap chat deployment, plus embeddings) |
-| Data | PostgreSQL (app tables and the demo database), Redis (answer cache, pending changes), Qdrant (few-shot examples) |
+| Data | PostgreSQL (app tables and the demo database), any supported SQL database as the one you chat with (see [Connecting your own database](#connecting-your-own-database)), Redis (answer cache, pending changes), Qdrant (few-shot examples) |
 | Frontend | React 18, Vite, plain CSS |
 
 ## How it works
@@ -118,8 +119,8 @@ For a new chat, a title is generated alongside these steps, so it adds no waitin
 | 4 | **Router** | A small model classifies the message as `greeting`, `data_question`, `off_topic` or `unsafe` (and `data_change`, offered only to admins). Only data questions continue to SQL. |
 | 5 | **Dynamic few-shot** | The question is embedded, and similar stored question and SQL pairs from Qdrant are added to the SQL prompt. |
 | 6 | **Generate SQL** | The capable model writes the query from the schema, the examples and the recent history. It may ask a clarifying question instead. |
-| 7 | **SQL guard** | Parses the SQL: only `SELECT`, known tables only, no `pg_*`, `dblink` or `set_config`-style functions, at most 5 statements. |
-| 8 | **Read-only execution with retry** | Runs in a read-only transaction with a statement timeout and row cap. If Postgres rejects the query, the error is fed back to the model, for up to 3 attempts, before a "can't answer" message. |
+| 7 | **SQL guard** | Parses the SQL in the connected engine's dialect: only `SELECT`, known tables only, no other schema or database, no engine-specific file, command or sleep functions, no comments or optimizer hints, at most 5 statements. |
+| 8 | **Read-only execution with retry** | Runs with a statement timeout and row cap, in a read-only session where the engine supports one (PostgreSQL, MySQL). If the database rejects the query, the error is fed back to the model, for up to 3 attempts, before a "can't answer" message. |
 | 9 | **Answer and learn** | The model writes a short answer from the first 20 rows, in the language of the question. |
 
 ### Admin data changes
@@ -220,6 +221,28 @@ npm run dev
 
 Open `http://localhost:5173`, create an account, and ask a question. The frontend talks to the API at `http://localhost:8000` (set in `frontend/src/api.js`).
 
+## Connecting your own database
+
+Supervisors and admins open the database panel and choose **Connect a database**. The page asks for the kind of database, then either the host, port, database, username and password, or a pasted connection URL. **Test connection** tries it without saving. Questions then run against that database. The password is encrypted before it is stored (needs `APP_SECRET_KEY`).
+
+| Database | Driver to install | Read-only enforced by the database |
+|---|---|---|
+| PostgreSQL | `psycopg2-binary` (included) | yes |
+| MySQL / MariaDB | `pymysql` (included) | yes |
+| SQL Server | `pyodbc` plus the Microsoft ODBC driver | no |
+| Snowflake | `snowflake-sqlalchemy` | no |
+| BigQuery | `sqlalchemy-bigquery` (URL only) | no |
+| ClickHouse | `clickhouse-sqlalchemy` | no |
+| Oracle, Redshift, Databricks, Trino, Presto, Athena, CockroachDB, StarRocks, Doris, Hive, Impala, Spark, Teradata, Db2, HANA, Vertica | the SQLAlchemy driver for that engine, with a pasted URL | no |
+
+- **Drivers are optional.** Install only the one you use; the page says when one is missing.
+- **Engines that can't enforce read-only:** the SQL guard still lets only `SELECT` through, but connect with a database account that has read-only permission. The page shows a reminder.
+- **Data changes through chat** (admin preview and confirm) work on PostgreSQL only.
+- **Not supported:** SQLite and other embedded databases (the "host" would be a file on the server), and NoSQL databases.
+- **Private networks are blocked by default.** The server refuses hosts that resolve to private, loopback or link-local addresses, and checks the address a connection really reaches, so it can't be used to reach internal services. If your databases live on a private network, set `BLOCK_PRIVATE_HOSTS=false`.
+- **Connection URL options are allowlisted per engine** (for example `sslmode` for PostgreSQL or `warehouse` for Snowflake). Options that read local files or change the host are refused.
+- Only PostgreSQL and MySQL have been tested against live servers. The other engines are untested.
+
 ## Configuration
 
 All settings are environment variables, read from `.env`.
@@ -235,6 +258,7 @@ All settings are environment variables, read from `.env`.
 | `LLM_TIMEOUT_SECONDS` | no | `30` | Per-call timeout |
 | `DATABASE_URL` | yes | | PostgreSQL for the app tables and the demo data |
 | `APP_SECRET_KEY` | for custom databases | | Encrypts saved database URLs |
+| `BLOCK_PRIVATE_HOSTS` | no | `true` | Refuse user-supplied database hosts on private or loopback addresses. Set `false` if your databases are on a private network. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | no | | Creates (or promotes) this account as admin on every startup. Set both. |
 | `SESSION_TTL_DAYS` | no | `14` | Login session lifetime |
 | `COOKIE_SECURE` | no | `false` | Set `true` behind HTTPS |
@@ -336,7 +360,9 @@ All routes except sign-up and login need the session cookie.
 | `DELETE` | `/conversations/{id}` | Delete, with its messages |
 | `GET` | `/conversations/{id}/messages` | Messages in a conversation |
 | `GET` | `/conversations/{id}/followups` | Suggested next questions |
-| `POST` | `/connections` | Connect your own PostgreSQL database (supervisor, admin) |
+| `GET` | `/connections/engines` | Database types the connect page offers, and whether each driver is installed (supervisor, admin) |
+| `POST` | `/connections/test` | Try a connection without saving it (supervisor, admin) |
+| `POST` | `/connections` | Connect your own database, by URL or by separate fields (supervisor, admin) |
 | `GET` | `/connections/current` | The connected database and its schema |
 | `GET` | `/connections/starters` | Starter questions for the connected schema |
 | `GET` | `/admin/users` | List accounts (supervisor, admin) |
@@ -393,12 +419,15 @@ app/
                      lookup, Redis cache, password hashing and rate limits,
                      encryption of saved connection URLs, role permissions,
                      pending admin changes
+  dialects/          per-engine behaviour for connected databases: URL and
+                     driver rules, SQL dialect, read-only and timeout settings,
+                     and the private-network check
   guardrails/        input check (prompt injection), SQL check (read-only) and
                      the admin write check
 frontend/
   src/               React app: App.jsx, api.js, theme.js and components
                      (conversation rail, composer, results table, progress,
-                     database drawer, users and activity pages, appearance
+                     database drawer, connect-a-database page, users and activity pages, appearance
                      menu, sign-in screen)
   public/            favicon
 data/                Chinook demo CSVs
@@ -409,6 +438,8 @@ scripts/deploy.py    loads data/*.csv into the database
 ## Troubleshooting
 
 - **"Saving a database connection needs APP_SECRET_KEY"**: set `APP_SECRET_KEY` in `.env` and restart the backend.
+- **"isn't installed on this server" when connecting**: install the driver named on the page (for example `pip install pyodbc`) and restart the backend.
+- **"private network" when connecting**: the host resolves to a private address. Use a public host, or set `BLOCK_PRIVATE_HOSTS=false` for a self-hosted setup.
 - **Sign-in works but the app shows a signed-out screen**: the browser must reach the API at the address set in `frontend/src/api.js`, and the address you open the frontend on must be listed in `CORS_ORIGINS`.
 - **Answers are slow or skip examples**: check that Redis and Qdrant are running (`docker compose -f docker/docker-compose.yml ps`). The app still works without them, just without caching and examples.
 - **HTTP 503 "language model is unavailable"**: an Azure OpenAI call failed or timed out; check the key, endpoint and deployment names.
