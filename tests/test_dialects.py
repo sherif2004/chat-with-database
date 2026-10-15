@@ -93,3 +93,23 @@ def test_select_is_accepted_in_each_dialect(dialect, schema, sql):
 def test_unsafe_sql_is_refused(dialect, schema, sql):
     with pytest.raises(GuardrailError):
         validate_sql(sql, {"t"}, dialect, schema)
+
+
+@pytest.mark.parametrize("dialect,schema,sql", [
+    (MSSQL, "dbo", "SELECT a FROM otherdb.dbo.t"),
+    (MYSQL, "shop", "SELECT a FROM other.t"),
+    (POSTGRES, "public", "SELECT a FROM other.public.t"),
+])
+def test_other_databases_are_refused(dialect, schema, sql):
+    with pytest.raises(GuardrailError):
+        validate_sql(sql, {"t"}, dialect, schema)
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT a FROM t /*!50000 ; DROP TABLE t */",
+    "SELECT /*+ MAX_EXECUTION_TIME(1) */ a FROM t",
+    "SELECT a FROM t -- trailing",
+])
+def test_comments_never_reach_the_database(sql):
+    [out] = validate_sql(sql, {"t"}, MYSQL, "shop")
+    assert "/*" not in out and "--" not in out and "DROP" not in out

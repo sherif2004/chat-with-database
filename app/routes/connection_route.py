@@ -42,27 +42,22 @@ def _to_connection_info(connection, error: str | None = None) -> ConnectionInfo:
 def _url_from_request(request: ConnectRequest):
     """The URL to connect to: the pasted one, or one built from the fields."""
 
-    if request.database_url and request.database_url.strip():
-        return request.database_url.strip()
+    if request.database_url:
+        return request.database_url
 
-    dialect = by_key(request.engine or "")
-    if dialect is None:
-        raise DatabaseConnectionError("Choose a database type, or paste a connection URL.")
+    dialect = by_key(request.engine)  # ConnectRequest guarantees it exists
 
     try:
         require_installed(dialect)
     except UnsupportedDatabase as e:
         raise DatabaseConnectionError(str(e))
 
-    if dialect.needs_host and not request.host.strip():
-        raise DatabaseConnectionError("Enter the host (server address) of the database.")
-
     return build_url(
         dialect,
-        host=request.host.strip(),
+        host=request.host,
         port=request.port,
-        database=request.database.strip(),
-        username=request.username.strip(),
+        database=request.database,
+        username=request.username,
         password=request.password,
     )
 

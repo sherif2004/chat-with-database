@@ -37,6 +37,11 @@ def _check_tables_and_functions(
     cte_names = {cte.alias for cte in statement.find_all(exp.CTE)}
 
     for table in statement.find_all(exp.Table):
+        # A three-part name (otherdb.dbo.t) reaches another database on the
+        # same server, which the table-name check below would not notice.
+        if table.catalog:
+            raise GuardrailError("Access to another database is not allowed.")
+
         if table.db not in allowed_schemas:
             raise GuardrailError("Access to that schema is not allowed.")
 
@@ -65,7 +70,13 @@ def _validate_statement(
 
     _check_tables_and_functions(statement, allowed_tables, dialect, schema_name)
 
-    return statement.sql(dialect=dialect.sqlglot)
+    # Optimizer hints can override the statement timeout, so they are dropped.
+    for hint in list(statement.find_all(exp.Hint)):
+        hint.pop()
+
+    # Comments carry nothing the answer needs, and a driver may treat some as
+    # executable (MySQL /*! ... */, optimizer hints), so none reach the database.
+    return statement.sql(dialect=dialect.sqlglot, comments=False)
 
 
 def validate_sql(

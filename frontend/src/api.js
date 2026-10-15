@@ -2,6 +2,20 @@ const API_BASE = "http://localhost:8000";
 
 export class AuthError extends Error {}
 
+/** FastAPI sends a string for our own errors and a list for validation
+ *  errors. Turn either into a sentence a person can act on. */
+function describeError(detail) {
+  if (!Array.isArray(detail)) return detail;
+
+  return detail
+    .map(({ loc = [], msg = "" }) => {
+      const text = msg.replace(/^Value error, /, "");
+      const field = loc.length > 1 ? String(loc[loc.length - 1]).replace(/_/g, " ") : "";
+      return field ? `${field}: ${text}` : text;
+    })
+    .join(" ");
+}
+
 async function request(path, options = {}, action) {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -10,7 +24,7 @@ async function request(path, options = {}, action) {
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    const message = body?.detail || `${action}: ${response.status}`;
+    const message = describeError(body?.detail) || `${action}: ${response.status}`;
     // 401 on a data call means the session expired; auth calls report their
     // own 401 ("wrong password") as a plain error.
     if (response.status === 401 && !path.startsWith("/auth/")) {

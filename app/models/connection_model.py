@@ -1,12 +1,12 @@
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.dialects import POSTGRES, Dialect, UnsupportedDatabase, for_url, require_installed
-from app.dialects.network import PrivateHostBlocked, check_host
+from app.dialects.network import PrivateHostBlocked, check_host, verify_peer
 from app.models.database import app_engine, run_ddl, run_or_log
 from app.models.schema_model import DatabaseSchema, default_schema_name, get_database_schema, schema_to_text
 from app.services.crypto_service import SecretKeyMissing, decrypt, encrypt
@@ -62,6 +62,7 @@ def _build_engine(database_url: str | URL) -> tuple[Engine, Dialect]:
 
     try:
         engine = create_engine(url, pool_recycle=300, connect_args=dict(dialect.connect_args))
+        event.listen(engine, "connect", verify_peer)
     except Exception as e:
         raise DatabaseConnectionError(f"Could not set up that connection: {e}")
 
@@ -78,7 +79,7 @@ def _test_and_introspect(engine: Engine) -> tuple[DatabaseSchema, str | None]:
 
     except SQLAlchemyError as e:
         engine.dispose()
-        raise DatabaseConnectionError(f"Could not connect to that database: {e.orig or e}")
+        raise DatabaseConnectionError(f"Could not connect to that database: {getattr(e, "orig", None) or e}")
 
 
 def _connect_and_introspect(database_url: str | URL) -> tuple[Engine, Dialect, DatabaseSchema, str | None]:
