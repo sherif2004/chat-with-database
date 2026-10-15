@@ -108,10 +108,11 @@ POSTGRES = Dialect(
     key="postgresql", name="PostgreSQL", backend="postgresql", driver="postgresql+psycopg2",
     module="psycopg2", package="psycopg2-binary", sqlglot="postgres", default_port=5432,
     curated=True, read_only_enforced=True, supports_writes=True, limit_hint="add a LIMIT",
-    forbidden_prefixes=("pg_", "lo_", "dblink"),
+    forbidden_prefixes=(
+        "pg_", "lo_", "dblink", "query_to_", "table_to_", "schema_to_", "database_to_", "cursor_to_",
+    ),
     forbidden_functions=frozenset({
-        "set_config", "current_setting", "query_to_xml", "table_to_xml", "database_to_xml",
-        "schema_to_xml", "cursor_to_xml", "txid_current", "nextval", "setval", "currval", "version",
+        "set_config", "current_setting", "ts_stat", "ts_rewrite", "txid_current", "nextval", "setval", "currval", "version",
     }),
     connect_args={"connect_timeout": 5},
     allowed_query=frozenset({"sslmode", "application_name"}),
