@@ -5,12 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from app.dialects import by_key
+from app.dialects import HOST_PATTERN, by_key
 from app.models.schema_model import DatabaseSchema
 
-# Host names, IPv4 and IPv6 literals, and Snowflake-style account ids. No
-# slashes, commas, spaces or `@`: those would change what the URL points at.
-_HOST = re.compile(r"^[A-Za-z0-9._:\-\[\]%]+$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -66,7 +63,7 @@ class ConnectRequest(BaseModel):
     @field_validator("host")
     @classmethod
     def _host_is_a_host(cls, value):
-        if value and not _HOST.match(value):
+        if value and not HOST_PATTERN.match(value):
             raise ValueError("The host should be a server name or IP address, with no spaces, slashes or commas.")
         return value
 

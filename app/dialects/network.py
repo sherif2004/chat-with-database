@@ -8,12 +8,13 @@ a private network turn it off with BLOCK_PRIVATE_HOSTS=false.
 
 import ipaddress
 import os
-import re
 import socket
 
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
+from app.dialects import HOST_PATTERN
 
 
 class PrivateHostBlocked(SQLAlchemyError):
@@ -56,7 +57,65 @@ def check_host(host: str | None) -> None:
         resolve_public(host)
 
 
-_ODBC_SERVER = re.compile(r"(?i)(\bserver=)([^;,]*)")
+# The only keys the SQL Server dialect may put in its ODBC connection string.
+# A fixed list means a hostile value can't add a second server or a failover
+# partner, which the driver would also connect to.
+_ODBC_KEYS = {"driver", "server", "database", "uid", "pwd", "encrypt", "trustservercertificate"}
+
+
+class _Unpinnable(Exception):
+    pass
+
+
+def _odbc_pairs(text: str) -> list[tuple[str, str]]:
+    """Split an ODBC connection string into (key, raw value) pairs. A value in
+    braces may contain `;`, and `}}` inside braces is a literal brace."""
+
+    pairs, i, n = [], 0, len(text)
+    while i < n:
+        equals = text.find("=", i)
+        if equals == -1:
+            if text[i:].strip(" ;"):
+                raise _Unpinnable()
+            break
+        key, j = text[i:equals].strip(), equals + 1
+        if j < n and text[j] == "{":
+            k = j + 1
+            while True:
+                end = text.find("}", k)
+                if end == -1:
+                    raise _Unpinnable()
+                if end + 1 < n and text[end + 1] == "}":
+                    k = end + 2
+                    continue
+                break
+            value, i = text[j:end + 1], end + 1
+            if i < n and text[i] == ";":
+                i += 1
+        else:
+            end = text.find(";", j)
+            end = n if end == -1 else end
+            value, i = text[j:end], end + 1
+        pairs.append((key, value))
+    return pairs
+
+
+def _pin_odbc(connection_string: str) -> str:
+    pairs = _odbc_pairs(connection_string)
+    keys = [key.lower() for key, _ in pairs]
+
+    if any(key not in _ODBC_KEYS for key in keys) or keys.count("server") != 1:
+        raise _Unpinnable()
+
+    rewritten = []
+    for key, value in pairs:
+        if key.lower() == "server":
+            host, comma, port = value.strip("{} ").partition(",")
+            if not HOST_PATTERN.match(host):
+                raise _Unpinnable()
+            value = resolve_public(host) + comma + port
+        rewritten.append(f"{key}={value}")
+    return ";".join(rewritten)
 
 
 def pin_to_public_address(dialect, _record, cargs, cparams) -> None:
@@ -67,29 +126,36 @@ def pin_to_public_address(dialect, _record, cargs, cparams) -> None:
     and a database that moves to a new address is picked up on the next
     connection instead of being stuck on an old one.
 
-    For libpq the name is kept (`host`) for TLS, and the address is added as
-    `hostaddr`. Drivers whose host can't be located here are refused rather
-    than let through unchecked."""
+    Each driver takes its target differently, so each is handled explicitly:
+    libpq (`hostaddr`, the name stays for TLS), pymysql (`host`), pyodbc (the
+    `Server=` value of the connection string) and ClickHouse native (the DSN).
+    Any other driver is refused while blocking is on, never let through."""
 
     if not settings.block_private_hosts:
         return
 
-    host = cparams.get("host")
-    if isinstance(host, str) and host:
-        address = resolve_public(host)
-        if dialect.driver == "psycopg2":
-            cparams["hostaddr"] = address
-        else:
-            cparams["host"] = address
-        return
+    try:
+        host = cparams.get("host")
 
-    # pyodbc: the whole connection string is the first positional argument.
-    if cargs and isinstance(cargs[0], str):
-        match = _ODBC_SERVER.search(cargs[0])
-        if match:
-            address = resolve_public(match.group(2).strip().strip("{}"))
-            cargs[0] = cargs[0][: match.start(2)] + address + cargs[0][match.end(2):]
+        if dialect.driver == "psycopg2" and isinstance(host, str) and host:
+            cparams["hostaddr"] = resolve_public(host)
             return
+
+        if dialect.driver == "pymysql" and isinstance(host, str) and host:
+            cparams["host"] = resolve_public(host)
+            return
+
+        if dialect.driver == "pyodbc" and cargs and isinstance(cargs[0], str):
+            cargs[0] = _pin_odbc(cargs[0])
+            return
+
+        if dialect.driver == "native" and cargs and isinstance(cargs[0], str):
+            dsn = make_url(cargs[0])
+            if dsn.host and HOST_PATTERN.match(dsn.host):
+                cargs[0] = dsn.set(host=resolve_public(dsn.host)).render_as_string(hide_password=False)
+                return
+    except _Unpinnable:
+        pass
 
     raise PrivateHostBlocked(
         "This server can't verify where that kind of connection goes, so it won't open it "

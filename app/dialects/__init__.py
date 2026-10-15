@@ -10,6 +10,10 @@ SQL guard still allows only SELECTs, but the engine itself is not asked to
 refuse writes, so users are told to connect with a read-only account.
 """
 
+import base64
+import binascii
+import json
+import re
 from dataclasses import dataclass, field
 from importlib.util import find_spec
 from typing import Callable
@@ -193,15 +197,65 @@ def by_key(key: str) -> Dialect | None:
     return _BY_KEY.get(key)
 
 
+# Host names, IPv4 and IPv6 literals. No spaces, slashes, commas, semicolons or `@`:
+# those change what a URL or a driver connection string points at.
+HOST_PATTERN = re.compile(r"^[A-Za-z0-9._:\-\[\]%]+$")
+
+# A Snowflake account identifier, such as xy12345 or xy12345.eu-west-1.
+_SNOWFLAKE_ACCOUNT = re.compile(r"^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$")
+
+# Where a Google service-account key may fetch tokens from. A key can name any
+# URL here, and the server would call it.
+_GOOGLE_TOKEN_HOSTS = {"oauth2.googleapis.com", "accounts.google.com"}
+
+
+def _check_snowflake(parsed: URL) -> None:
+    """snowflake-sqlalchemy turns a bare account id into <id>.snowflakecomputing.com,
+    but uses the typed host as is when there is a port or a snowflakecomputing.com
+    in it. So only a bare account id is accepted."""
+
+    host = parsed.host or ""
+    if parsed.port is not None or "snowflakecomputing" in host.lower() or not _SNOWFLAKE_ACCOUNT.match(host):
+        raise UnsupportedDatabase(
+            "For Snowflake, enter only the account identifier (for example xy12345.eu-west-1), "
+            "with no port and no snowflakecomputing.com."
+        )
+
+
+def _check_bigquery(parsed: URL) -> None:
+    """A service-account key is a file of instructions the Google client follows,
+    including where to send requests. Accept only an ordinary key that points at Google."""
+
+    encoded = parsed.query.get("credentials_base64")
+    if encoded is None:
+        raise UnsupportedDatabase("BigQuery needs credentials_base64 (a base64 service-account key).")
+
+    try:
+        key = json.loads(base64.b64decode(str(encoded), validate=True))
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        raise UnsupportedDatabase("credentials_base64 isn't a base64-encoded service-account key.")
+
+    token_host = ""
+    if isinstance(key, dict) and isinstance(key.get("token_uri"), str):
+        token_host = (key["token_uri"].split("://", 1)[-1].split("/", 1)[0]).lower()
+
+    if (
+        not isinstance(key, dict)
+        or key.get("type") != "service_account"
+        or token_host not in _GOOGLE_TOKEN_HOSTS
+        or key.get("universe_domain", "googleapis.com") != "googleapis.com"
+    ):
+        raise UnsupportedDatabase("That isn't an ordinary Google service-account key.")
+
+
 def _check_url(parsed: URL, dialect: Dialect) -> None:
     host = parsed.host or ""
 
     if dialect.needs_host and not host:
         raise UnsupportedDatabase("The connection URL needs a host (server address).")
 
-    # A comma-separated list or a path would reach hosts the address check never saw.
-    if "," in host or host.startswith("/"):
-        raise UnsupportedDatabase("Enter a single host name or IP address.")
+    if host and not HOST_PATTERN.match(host):
+        raise UnsupportedDatabase("The host should be a server name or IP address, with no spaces, slashes, commas or semicolons.")
 
     for key, value in parsed.query.items():
         if key not in dialect.allowed_query:
@@ -211,6 +265,11 @@ def _check_url(parsed: URL, dialect: Dialect) -> None:
             )
         if key == "driver" and value not in ("ODBC Driver 17 for SQL Server", "ODBC Driver 18 for SQL Server"):
             raise UnsupportedDatabase("Only the Microsoft ODBC driver for SQL Server can be used.")
+
+    if dialect.key == "snowflake":
+        _check_snowflake(parsed)
+    elif dialect.key == "bigquery":
+        _check_bigquery(parsed)
 
 
 def for_url(url: URL | str) -> Dialect:
