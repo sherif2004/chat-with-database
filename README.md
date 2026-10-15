@@ -315,7 +315,7 @@ Every account has one role. Sign-up always creates a `user`; admins change roles
 | View the Activity dashboard | ❌ | ❌ | ✅ |
 | Change data in the connected database (preview, then confirm) | ❌ | ❌ | ✅ |
 
-The role-to-permission map lives in `app/services/permissions.py`; routes ask for a permission with `require_permission("...")`.
+The role-to-permission map lives in `app/accounts/permissions.py`; routes ask for a permission with `require_permission("...")`.
 
 - Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` to create the first admin on startup. If that email already has an account, it is promoted, its password is replaced by `ADMIN_PASSWORD`, and its sessions end.
 - The last admin can't be demoted or deleted, and you can't change or delete your own account.
@@ -405,26 +405,24 @@ app/
   main.py            FastAPI app, middleware, startup
   config.py          environment settings
   dependencies.py    signed-in user from the session cookie
-  timing.py          per-step timings returned with every response
-  graphs/            the chat pipeline (LangGraph StateGraph):
-                     chat_graph.py (nodes, edges, SQL retry loop), chat_state.py
-  models/            data access: users and sessions, conversations, chat
-                     history, saved connections, activity and change logs,
-                     schema introspection, SQL execution, the Qdrant example
-                     store
-  views/             request and response schemas
-  controllers/       runs the graph and turns the final state into a response
-  routes/            endpoints: auth, chat, conversations, connections, admin
-  services/          LLM calls and prompts, intent router, chat titles,
-                     starter and follow-up suggestions, embeddings, few-shot
-                     lookup, Redis cache, password hashing and rate limits,
-                     encryption of saved connection URLs, role permissions,
-                     pending admin changes
-  dialects/          per-engine behaviour for connected databases: URL and
-                     driver rules, SQL dialect, read-only and timeout settings,
-                     and the private-network check
-  guardrails/        input check (prompt injection), SQL check (read-only) and
-                     the admin write check
+  chat/              how one question is answered, by phase:
+    graph.py           the whole flow in one place (nodes, edges, SQL retry loop)
+    understand/        input check, cache, intent: what does the user want?
+    generate/          similar past examples, prompts, the model writes the SQL
+    execute/           SQL safety check, run it read-only, admin change preview
+    respond/           the written answer, chat titles, suggested questions
+    history.py, conversations.py, controller.py, schemas.py, state.py
+  databases/         everything about the database being queried:
+                     engines.py (per-engine rules: URL and driver, SQL dialect,
+                     read-only and timeout settings), network_guard.py
+                     (private-network check and IP pinning), connection.py
+                     (saved connections), schema.py, query.py
+  accounts/          users and sessions, password hashing, role permissions,
+                     activity and change logs
+  api/               HTTP endpoints (auth, chat, conversations, connections,
+                     admin) and their request and response schemas
+  shared/            Redis cache, LLM client, encryption, database engine for
+                     the app's own tables, step timings
 frontend/
   src/               React app: App.jsx, api.js, theme.js and components
                      (conversation rail, composer, results table, progress,

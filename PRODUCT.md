@@ -26,7 +26,7 @@ Single web app: FastAPI backend, React frontend (plain CSS), PostgreSQL, Redis, 
 
 ## Capabilities and Constraints
 
-- Roles and permissions are defined in `app/services/permissions.py`; the backend is the authority and the UI only hides what a role cannot use.
+- Roles and permissions are defined in `app/accounts/permissions.py`; the backend is the authority and the UI only hides what a role cannot use.
 - Event types to log and show (confirmed): sign-ins and sign-outs, failed sign-ins, chats viewed by another user, account and role changes. Admin data changes are already recorded in `app.data_changes`.
 - UX improvement scope (confirmed): chat screen and results, sidebar and navigation. The existing brand look (see `.impeccable/design.json`) stays; this refines it.
 - Undecided: retention period for activity logs; sign-in screen and mobile/accessibility passes were not selected for this round.

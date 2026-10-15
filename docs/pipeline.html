@@ -123,7 +123,7 @@ td:first-child{font-weight:500}
 
 <main>
 <h1>How the Askbase pipeline works</h1>
-<p class="lede">What happens to one question, step by step, and what each possible outcome looks like. Everything here is taken from the code in <code>app/graphs</code>, <code>app/controllers</code> and <code>app/routes</code>.</p>
+<p class="lede">What happens to one question, step by step, and what each possible outcome looks like. Everything here is taken from the code in <code>app/chat</code> and <code>app/api</code>.</p>
 
 <h2 id="overview">Overview</h2>
 <p>Every chat request first passes four access gates (A to D), then goes through one LangGraph graph of nine steps. Most steps can end the run early with a message. Solid arrows go to the next step, dashed arrows leave the main path, and the blue loop is the SQL retry.</p>
@@ -147,19 +147,19 @@ td:first-child{font-weight:500}
 <h3>Where each permission is enforced</h3>
 <div class="table-wrap"><table><thead><tr><th>Permission</th><th>user</th><th>supervisor</th><th>admin</th><th>Enforced in</th></tr></thead><tbody>
 <tr><td><code>chat</code>, <code>conversation:own</code></td><td>yes</td><td>yes</td><td>yes</td><td>Defined in the map, but <strong>no route checks them</strong>. Every signed-in account can chat and manage its own conversations, because those routes only require a session. Ownership is enforced by the <code>u:&lt;id&gt;</code> key.</td></tr>
-<tr><td><code>connection:write</code></td><td>no</td><td>yes</td><td>yes</td><td><code>POST /connections</code> in <code>connection_route.py</code>. The interface hides the connect form.</td></tr>
-<tr><td><code>conversation:read_any</code></td><td>no</td><td>yes</td><td>yes</td><td><code>GET /admin/users/{id}/conversations</code> and <code>.../messages</code> in <code>admin_route.py</code>. Read-only, and every view is logged.</td></tr>
+<tr><td><code>connection:write</code></td><td>no</td><td>yes</td><td>yes</td><td><code>POST /connections</code> in <code>api/connections.py</code>. The interface hides the connect form.</td></tr>
+<tr><td><code>conversation:read_any</code></td><td>no</td><td>yes</td><td>yes</td><td><code>GET /admin/users/{id}/conversations</code> and <code>.../messages</code> in <code>api/admin.py</code>. Read-only, and every view is logged.</td></tr>
 <tr><td><code>users:read</code></td><td>no</td><td>yes</td><td>yes</td><td><code>GET /admin/users</code>. The interface shows the Users page.</td></tr>
 <tr><td><code>users:write</code></td><td>no</td><td>no</td><td>yes</td><td><code>PATCH /admin/users/{id}/role</code> and <code>DELETE /admin/users/{id}</code>. You cannot change or delete yourself, the last admin cannot be demoted or deleted, and a role change ends that user's sessions.</td></tr>
 <tr><td><code>activity:read</code></td><td>no</td><td>no</td><td>yes</td><td><code>GET /admin/activity</code> and <code>/admin/activity/summary</code>. The interface shows the Activity page.</td></tr>
-<tr><td><code>data:write</code></td><td>no</td><td>no</td><td>yes</td><td>Three places: the chat routes set <code>can_write</code>, the router node re-checks it (<code>chat_graph.py</code>), and <code>POST /chat/confirm-change</code> requires it.</td></tr>
+<tr><td><code>data:write</code></td><td>no</td><td>no</td><td>yes</td><td>Three places: the chat routes set <code>can_write</code>, the router node re-checks it (<code>chat/graph.py</code>), and <code>POST /chat/confirm-change</code> requires it.</td></tr>
 </tbody></table></div>
 
 <h3>Related rules</h3>
 <ul>
 <li><strong>Sign-up always creates a <code>user</code>.</strong> The role is never read from the request body.</li>
 <li><strong>The first admin</strong> comes from <code>ADMIN_EMAIL</code> and <code>ADMIN_PASSWORD</code> at startup. If that email already has an account, it is promoted, its password is replaced and its sessions end.</li>
-<li><strong>Role map:</strong> <code>app/services/permissions.py</code> is the single source of truth. Nothing else should compare role names.</li>
+<li><strong>Role map:</strong> <code>app/accounts/permissions.py</code> is the single source of truth. Nothing else should compare role names.</li>
 <li><strong>What the database enforces:</strong> chat queries run in a read-only transaction, so even a write that slipped past the guard would be rejected. The app still connects with one database login for reads and writes, so a leaked <code>DATABASE_URL</code> would bypass every role.</li>
 </ul>
 

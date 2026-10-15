@@ -1,7 +1,7 @@
 from fastapi import Cookie, Depends, HTTPException
 
-from app.models.user_model import User, get_user_by_token
-from app.services.permissions import has_permission
+from app.accounts.users import User, get_user_by_token
+from app.accounts.permissions import has_permission
 
 SESSION_COOKIE = "session"
 

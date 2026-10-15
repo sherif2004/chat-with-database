@@ -5,15 +5,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.models.activity_model import ensure_activity_schema
-from app.models.audit_model import ensure_audit_schema
-from app.models.connection_model import ensure_connections_schema, init_default_connection
-from app.models.history_model import ensure_chat_history_schema
-from app.models.user_model import ensure_users_schema, seed_admin
-from app.routes import admin_route, auth_route, chat_route, connection_route, conversation_route
+from app.accounts.activity import ensure_activity_schema
+from app.accounts.audit import ensure_audit_schema
+from app.databases.connection import ensure_connections_schema, init_default_connection
+from app.chat.history import ensure_chat_history_schema
+from app.accounts.users import ensure_users_schema, seed_admin
+from app.api import admin, auth, chat, connections, conversations
 from app.config import settings
-from app.services import example_service
-from app.services.auth_service import hash_password, is_valid_email, normalize_email
+from app.chat.generate import examples as example_service
+from app.accounts.auth import hash_password, is_valid_email, normalize_email
 
 logging.basicConfig(level=logging.INFO)
 for name in ("httpx", "httpx2"):
@@ -85,8 +85,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(admin_route.router)
-app.include_router(auth_route.router)
-app.include_router(chat_route.router)
-app.include_router(connection_route.router)
-app.include_router(conversation_route.router)
+app.include_router(admin.router)
+app.include_router(auth.router)
+app.include_router(chat.router)
+app.include_router(connections.router)
+app.include_router(conversations.router)
