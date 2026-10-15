@@ -81,7 +81,7 @@ The browser only ever talks to the API. The signed-in user comes from the sessio
 
 ### The chat pipeline
 
-Every message goes through one LangGraph graph:
+Every message goes through one LangGraph graph, defined in `app/chat/graph.py`. The steps fall into four phases, each with its own folder under `app/chat/`: **understand** (steps 1 to 4), **generate** (5 and 6), **execute** (7 and 8, plus admin changes) and **respond** (9).
 
 ```mermaid
 flowchart TD
@@ -399,6 +399,8 @@ Run Qdrant locally with Docker (data is kept in a volume), or use Qdrant Cloud a
 If Qdrant or embeddings are unreachable at startup, the app logs a warning and answers without examples.
 
 ## Project structure
+
+New to the code? [docs/ONBOARDING.md](docs/ONBOARDING.md) walks through one question end to end and lists the common edits.
 
 ```
 app/
