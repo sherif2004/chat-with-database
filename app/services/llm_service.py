@@ -5,6 +5,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import settings
 from app.models.example_model import SimilarExample
+from app.dialects import POSTGRES, Dialect
 from app.services.prompts import answer_prompt, sql_prompt, write_sql_prompt
 from app.views.chat_view import TokenUsage
 
@@ -95,12 +96,13 @@ def generate_sql(
     examples: list[SimilarExample] | None = None,
     history: list[dict] | None = None,
     previous_attempt: dict | None = None,
+    dialect: Dialect = POSTGRES,
 ) -> SQLGeneration:
     """`previous_attempt`, when set, is {"sql", "error"} from a prior
     attempt that failed against the real database — used to retry with
     the failure fed back to the model."""
 
-    prompt = sql_prompt(question, schema_text, examples or [], history or [], previous_attempt)
+    prompt = sql_prompt(question, schema_text, examples or [], history or [], previous_attempt, dialect)
     draft, usage = ask_structured(prompt, _SQLDraft, max_output_tokens=1000)
 
     if draft is None or not draft.can_answer or not (draft.sql or "").strip():

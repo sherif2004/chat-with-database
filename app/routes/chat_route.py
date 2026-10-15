@@ -142,6 +142,9 @@ def confirm_change(
     except DatabaseConnectionError as e:
         raise HTTPException(status_code=400, detail=f"Your connected database is unreachable: {e}")
 
+    if not connection.dialect.supports_writes:
+        raise HTTPException(status_code=400, detail="Data changes are only available on PostgreSQL databases.")
+
     if connection.label != pending["connection_label"]:
         raise HTTPException(status_code=409, detail="The connected database changed. Ask again.")
 

@@ -2,6 +2,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
 
+from app.dialects import POSTGRES, Dialect
 from app.guardrails.errors import GuardrailError, UnknownTableError
 
 # Anything that can write, change structure, or run commands.
@@ -15,15 +16,6 @@ _FORBIDDEN_NODES = tuple(
     if hasattr(exp, name)
 )
 
-# Functions that read files, sleep, reach other servers or change settings.
-_FORBIDDEN_FUNCTION_PREFIXES = ("pg_", "lo_", "dblink")
-_FORBIDDEN_FUNCTIONS = {
-    "set_config", "current_setting", "query_to_xml", "table_to_xml",
-    "database_to_xml", "schema_to_xml", "cursor_to_xml", "txid_current",
-    "nextval", "setval", "currval", "version",
-}
-
-_ALLOWED_SCHEMAS = {"", "public"}
 
 # Upper bound on how many SELECTs one question may run, so a question that
 # genuinely needs several independent result sets is still cheap and fast.
@@ -36,12 +28,16 @@ def _function_name(func: exp.Expression) -> str:
     return func.sql_name().lower()
 
 
-def _check_tables_and_functions(statement, allowed_tables: set[str]) -> None:
+def _check_tables_and_functions(
+    statement, allowed_tables: set[str], dialect: Dialect, schema_name: str | None
+) -> None:
+
+    allowed_schemas = {"", schema_name or ""}
 
     cte_names = {cte.alias for cte in statement.find_all(exp.CTE)}
 
     for table in statement.find_all(exp.Table):
-        if table.db not in _ALLOWED_SCHEMAS:
+        if table.db not in allowed_schemas:
             raise GuardrailError("Access to that schema is not allowed.")
 
         if table.name not in allowed_tables and table.name not in cte_names:
@@ -52,11 +48,13 @@ def _check_tables_and_functions(statement, allowed_tables: set[str]) -> None:
     for func in statement.find_all(exp.Func):
         name = _function_name(func)
 
-        if name in _FORBIDDEN_FUNCTIONS or name.startswith(_FORBIDDEN_FUNCTION_PREFIXES):
+        if name in dialect.forbidden_functions or name.startswith(dialect.forbidden_prefixes):
             raise GuardrailError(f"The function {name} is not allowed.")
 
 
-def _validate_statement(statement, allowed_tables: set[str]) -> str:
+def _validate_statement(
+    statement, allowed_tables: set[str], dialect: Dialect, schema_name: str | None
+) -> str:
 
     if not isinstance(statement, exp.Query):
         raise GuardrailError("Only SELECT queries are allowed.")
@@ -65,17 +63,22 @@ def _validate_statement(statement, allowed_tables: set[str]) -> str:
         if isinstance(node, _FORBIDDEN_NODES):
             raise GuardrailError("Only read-only SELECT queries are allowed.")
 
-    _check_tables_and_functions(statement, allowed_tables)
+    _check_tables_and_functions(statement, allowed_tables, dialect, schema_name)
 
-    return statement.sql(dialect="postgres")
+    return statement.sql(dialect=dialect.sqlglot)
 
 
-def validate_sql(sql: str, allowed_tables: set[str]) -> list[str]:
+def validate_sql(
+    sql: str,
+    allowed_tables: set[str],
+    dialect: Dialect = POSTGRES,
+    schema_name: str | None = "public",
+) -> list[str]:
     """Accept only read-only SELECTs over known tables, one or several
     (up to MAX_STATEMENTS), and return each validated statement."""
 
     try:
-        statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
+        statements = [s for s in sqlglot.parse(sql, read=dialect.sqlglot) if s is not None]
     except SqlglotError:
         raise GuardrailError("The generated query could not be parsed.")
 
@@ -85,14 +88,14 @@ def validate_sql(sql: str, allowed_tables: set[str]) -> list[str]:
     if len(statements) > MAX_STATEMENTS:
         raise GuardrailError(f"At most {MAX_STATEMENTS} SQL statements are allowed.")
 
-    return [_validate_statement(statement, allowed_tables) for statement in statements]
+    return [_validate_statement(statement, allowed_tables, dialect, schema_name) for statement in statements]
 
 
 _WRITE_NODES = tuple(getattr(exp, name) for name in ("Insert", "Update", "Delete"))
 _FORBIDDEN_IN_WRITE = tuple(n for n in _FORBIDDEN_NODES if n not in _WRITE_NODES)
 
 
-def validate_write_sql(sql: str, allowed_tables: set[str]) -> str:
+def validate_write_sql(sql: str, allowed_tables: set[str]) -> str:  # PostgreSQL only
     """Accept exactly one INSERT, UPDATE or DELETE over known tables in the
     public schema and return it normalized. UPDATE and DELETE need a WHERE.
     Only reachable by roles holding data:write; the read path above never
@@ -122,6 +125,6 @@ def validate_write_sql(sql: str, allowed_tables: set[str]) -> str:
     if isinstance(statement, (exp.Update, exp.Delete)) and not statement.args.get("where"):
         raise GuardrailError("UPDATE and DELETE must have a WHERE clause.")
 
-    _check_tables_and_functions(statement, allowed_tables)
+    _check_tables_and_functions(statement, allowed_tables, POSTGRES, "public")
 
     return statement.sql(dialect="postgres")

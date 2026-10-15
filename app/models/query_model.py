@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.config import settings
+from app.dialects import POSTGRES, Dialect
 from app.models.database import retry_on_disconnect
 
 
@@ -13,27 +14,30 @@ class QueryResult(BaseModel):
     truncated: bool = False
 
 
-def execute_sql(sql, engine) -> QueryResult:
-    """Run a query in a read-only transaction with a timeout.
+def execute_sql(sql, engine, dialect: Dialect = POSTGRES) -> QueryResult:
+    """Run a query with a timeout, in a read-only session where the engine
+    supports one.
 
-    This is the last line of defence: even if a write got past the
-    SQL guard, Postgres rejects it here. `sql` is a single SELECT that
-    already passed the SQL guard, so the timeout can share its round trip.
+    The SQL guard is the first line of defence; for engines that can refuse
+    writes themselves (`dialect.read_only_enforced`) this is the second.
+    `sql` is a single SELECT that already passed the guard.
     """
 
     def run():
 
         with engine.connect() as conn:
 
-            conn = conn.execution_options(postgresql_readonly=True)
+            if dialect is POSTGRES:
+                conn = conn.execution_options(postgresql_readonly=True)
 
-            result = conn.execute(text(
-                f"SET LOCAL statement_timeout = {settings.statement_timeout_ms}; {sql}"
-            ))
+            dialect.prepare(conn)
 
-            columns = list(result.keys())
-
-            rows = result.fetchmany(settings.max_rows + 1)
+            try:
+                result = conn.execute(text(sql))
+                columns = list(result.keys())
+                rows = result.fetchmany(settings.max_rows + 1)
+            finally:
+                dialect.reset(conn)
 
         return QueryResult(
             columns=columns,

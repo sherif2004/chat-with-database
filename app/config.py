@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # Seeds (or promotes) this account as admin on startup. Both are needed.
     admin_email: str | None = None
     admin_password: str | None = None
+    # Refuse user-supplied database hosts that resolve to private/loopback addresses.
+    block_private_hosts: bool = True
     cors_origins: str = "http://localhost:5173"
 
     redis_url: str = "redis://localhost:6379/0"

@@ -29,6 +29,13 @@ class DatabaseSchema(BaseModel):
         return {table.name for table in self.tables}
 
 
+def default_schema_name(engine) -> str | None:
+    """The schema a connection lands in: `public` on PostgreSQL, the
+    database on MySQL, `dbo` on SQL Server."""
+
+    return inspect(engine).default_schema_name
+
+
 def get_database_schema(engine, schema_name="public") -> DatabaseSchema:
 
     inspector = inspect(engine)

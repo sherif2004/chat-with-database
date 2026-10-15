@@ -12,10 +12,11 @@ read start to finish on its own.
 
 import json
 
+from app.dialects import POSTGRES, Dialect
 from app.guardrails.sql_guard import MAX_STATEMENTS
 
 
-def sql_prompt(question, schema_text, examples, history, previous_attempt=None) -> str:
+def sql_prompt(question, schema_text, examples, history, previous_attempt=None, dialect: Dialect = POSTGRES) -> str:
     """Prompt for generate_sql: writes the SQL. `previous_attempt`, when
     set, is {"sql", "error"} from a prior attempt that failed against the
     real database — fed back so the model can fix its own mistake."""
@@ -76,25 +77,9 @@ Database error:
             history_lines.append("")
         history_section = "\n".join(history_lines)
 
-    # --- The prompt itself ---
-
-    return f"""
-You are a PostgreSQL SQL expert.
-
-Convert the user's natural language question into one PostgreSQL
-SELECT query, or several semicolon-separated SELECT queries when the
-question genuinely needs more than one (see rule 1 below).
-
-DATABASE SCHEMA:
-
-{schema_text}
-
-IMPORTANT POSTGRESQL RULE:
-
-Table and column names are CASE-SENSITIVE. Always use DOUBLE QUOTES
-around every table name and every column name exactly as they appear
-in the schema above.
-
+    identifier_example = ""
+    if dialect is POSTGRES:
+        identifier_example = """
 Correct (using a table "Orders" and a column "Total"):
 
 SELECT o."Total" FROM "Orders" AS o;
@@ -102,7 +87,26 @@ SELECT o."Total" FROM "Orders" AS o;
 Incorrect (missing quotes, wrong case):
 
 SELECT o.total FROM orders o;
+"""
 
+    # --- The prompt itself ---
+
+    return f"""
+You are a {dialect.name} SQL expert.
+
+Convert the user's natural language question into one {dialect.name}
+SELECT query, or several semicolon-separated SELECT queries when the
+question genuinely needs more than one (see rule 1 below).
+
+DATABASE SCHEMA:
+
+{schema_text}
+
+IMPORTANT IDENTIFIER RULE:
+
+Table and column names can be CASE-SENSITIVE. {dialect.quote_rule}
+Write standard {dialect.name} syntax only.
+{identifier_example}
 RULES:
 
 1. Prefer a single SELECT query. Generate more than one SELECT
@@ -121,10 +125,10 @@ RULES:
    mentions one that is not in the schema.
 4. Use foreign keys to determine how tables relate, and join
    through them when the answer needs more than one table.
-5. Always double-quote table and column names.
+5. Always quote table and column names as described above.
 6. Give computed columns a clear alias, for example "AlbumCount".
 7. For "top", "most", "best" or ranking questions, ORDER BY the
-   measure descending and add a LIMIT (1 for a single "the most",
+   measure descending and {dialect.limit_hint} (1 for a single "the most",
    otherwise the number asked for, or 10 when none is given).
 8. Before concluding the schema can't answer it, check BOTH the schema
    above AND the RECENT CONVERSATION below (if any) — a short question

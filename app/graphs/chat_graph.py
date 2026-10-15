@@ -187,7 +187,7 @@ def classify_intent_node(state: GraphState, config) -> dict:
             state["question"],
             _connection(config).schema_text,
             state.get("history"),
-            can_write=state.get("can_write", False),
+            can_write=state.get("can_write", False) and _connection(config).dialect.supports_writes,
         )
     debug.prompts["router"] = prompt
     _record_usage(debug, "router", usage)
@@ -202,7 +202,7 @@ def classify_intent_node(state: GraphState, config) -> dict:
     if decision.intent == "data_change":
         # Only offered to roles with data:write, but never trust the model:
         # re-check here so a stray answer cannot open the write path.
-        if not state.get("can_write"):
+        if not state.get("can_write") or not _connection(config).dialect.supports_writes:
             return _message_state("unsafe", UNSAFE_MESSAGE)
         return {"intent": "data_change"}
 
@@ -245,6 +245,7 @@ def generate_sql_node(state: GraphState, config) -> dict:
             state.get("examples"),
             state.get("history"),
             previous_attempt=previous_attempt,
+            dialect=connection.dialect,
         )
     debug.prompts["generate_sql"] = generation.prompt
     _record_usage(debug, "generate_sql", generation.usage)
@@ -264,7 +265,9 @@ def validate_sql_node(state: GraphState, config) -> dict:
 
     try:
         with timings.step("sql_guard"):
-            statements = validate_sql(state["sql"], connection.schema.table_names)
+            statements = validate_sql(
+                state["sql"], connection.schema.table_names, connection.dialect, connection.schema_name
+            )
     except UnknownTableError:
         return _message_state("off_topic", CANNOT_ANSWER_MESSAGE)
     except GuardrailError as e:
@@ -284,7 +287,7 @@ def execute_sql_node(state: GraphState, config) -> dict:
 
     try:
         with timings.step("execute_sql"):
-            queries = [execute_sql(stmt, connection.engine) for stmt in statements]
+            queries = [execute_sql(stmt, connection.engine, connection.dialect) for stmt in statements]
     except SQLAlchemyError as e:
         retry_count = state.get("retry_count", 0) + 1
         return {

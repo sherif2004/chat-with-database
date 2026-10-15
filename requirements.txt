@@ -12,3 +12,4 @@ redis
 langgraph
 cryptography
 pandas
+pymysql

@@ -154,12 +154,17 @@ export function getConnectionStatus() {
   return request("/connections/current", undefined, "Failed to load connection status");
 }
 
-export function connectDatabase(databaseUrl, label) {
-  return postJson(
-    "/connections",
-    { database_url: databaseUrl, label: label || undefined },
-    "Connection failed"
-  );
+export function getEngines() {
+  return request("/connections/engines", undefined, "Failed to load database types");
+}
+
+/** `payload` is either { database_url } or { engine, host, port, database, username, password }. */
+export function testConnection(payload) {
+  return postJson("/connections/test", payload, "Connection test failed");
+}
+
+export function connectDatabase(payload) {
+  return postJson("/connections", payload, "Connection failed");
 }
 
 export function getUsers() {

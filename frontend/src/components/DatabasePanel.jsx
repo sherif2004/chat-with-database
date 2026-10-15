@@ -1,30 +1,6 @@
-import { useState } from "react";
 import SchemaTree from "./SchemaTree";
 
-export default function DatabasePanel({ connection, connecting, onConnect, canConnect = true }) {
-  const [formOpen, setFormOpen] = useState(false);
-  const [url, setUrl] = useState("");
-  const [label, setLabel] = useState("");
-  const [formError, setFormError] = useState(null);
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-
-    const trimmedUrl = url.trim();
-    if (!trimmedUrl || connecting) return;
-
-    setFormError(null);
-
-    try {
-      await onConnect(trimmedUrl, label.trim());
-      setUrl("");
-      setLabel("");
-      setFormOpen(false);
-    } catch (error) {
-      setFormError(error.message);
-    }
-  }
-
+export default function DatabasePanel({ connection, onOpenConnect, canConnect = true }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-section">
@@ -45,53 +21,24 @@ export default function DatabasePanel({ connection, connecting, onConnect, canCo
                 ? "Saved connection unreachable — using default data"
                 : connection?.is_default
                 ? "Default demo data"
-                : "Custom connection"}
+                : `${connection?.engine ?? "Custom"} connection`}
             </div>
           </div>
         </div>
+
+        {connection && !connection.error && !connection.read_only_enforced && (
+          <p className="connection-sublabel">
+            This engine can't be set to read-only here. Use a read-only account.
+          </p>
+        )}
 
         {!canConnect && (
           <p className="connection-sublabel">Your role can only use the demo database.</p>
         )}
         {canConnect && (
-          <>
-        <button
-          type="button"
-          className="sidebar-link-button"
-          aria-expanded={formOpen}
-          onClick={() => setFormOpen((open) => !open)}
-        >
-          {formOpen ? "Cancel" : "Connect a database"}
-        </button>
-
-        {formOpen && (
-          <form className="connect-form" onSubmit={handleSubmit}>
-            <input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="Database connection URL"
-              placeholder="postgresql://user:password@host:5432/dbname"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              disabled={connecting}
-              autoFocus
-            />
-            <input
-              type="text"
-              aria-label="Connection label (optional)"
-              placeholder="Label (optional)"
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              disabled={connecting}
-            />
-            {formError && <div className="connect-error" role="alert">{formError}</div>}
-            <button type="submit" disabled={connecting || !url.trim()}>
-              {connecting ? "Connecting…" : "Connect"}
-            </button>
-          </form>
-        )}
-          </>
+          <button type="button" className="sidebar-link-button" onClick={onOpenConnect}>
+            {connection?.is_default ? "Connect a database" : "Change database"}
+          </button>
         )}
       </div>
 

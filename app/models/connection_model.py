@@ -2,22 +2,16 @@ import logging
 from dataclasses import dataclass
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.dialects import POSTGRES, Dialect, UnsupportedDatabase, for_url, require_installed
+from app.dialects.network import PrivateHostBlocked, check_host
 from app.models.database import app_engine, run_ddl, run_or_log
-from app.models.schema_model import DatabaseSchema, get_database_schema, schema_to_text
+from app.models.schema_model import DatabaseSchema, default_schema_name, get_database_schema, schema_to_text
 from app.services.crypto_service import SecretKeyMissing, decrypt, encrypt
 
 logger = logging.getLogger(__name__)
-
-# Phase 1: Postgres only. The SQL guard and prompt generation are written
-# against Postgres semantics — supporting other dialects needs guardrail
-# changes and is tracked as a follow-up, not attempted here.
-_ALLOWED_DRIVERNAMES = {"postgresql", "postgresql+psycopg2", "postgresql+psycopg"}
-
-_CONNECT_TIMEOUT_SECONDS = 5
-
 
 class DatabaseConnectionError(Exception):
     """A user-supplied database URL was invalid or could not be reached."""
@@ -30,6 +24,8 @@ class SessionConnection:
     schema_text: str
     label: str
     is_default: bool
+    dialect: Dialect = POSTGRES
+    schema_name: str | None = "public"
 
 
 # session_id -> SessionConnection, for sessions that connected their own DB.
@@ -46,57 +42,80 @@ _no_saved_connection: set[str] = set()
 _default_connection: SessionConnection | None = None
 
 
-def _label_for(database_url: str) -> str:
-    url = make_url(database_url)
+def _label_for(database_url: str | URL) -> str:
+    url = make_url(database_url) if isinstance(database_url, str) else database_url
     host = url.host or "localhost"
     database = url.database or ""
     return f"{host}/{database}" if database else host
 
 
-def _build_engine(database_url: str) -> Engine:
+def _build_engine(database_url: str | URL) -> tuple[Engine, Dialect]:
     try:
-        url = make_url(database_url)
+        url = make_url(database_url) if isinstance(database_url, str) else database_url
+        dialect = for_url(url)
+        require_installed(dialect)
+        check_host(url.host)
+    except (UnsupportedDatabase, PrivateHostBlocked) as e:
+        raise DatabaseConnectionError(str(e))
     except Exception as e:
         raise DatabaseConnectionError(f"That doesn't look like a valid database URL: {e}")
 
-    if url.drivername not in _ALLOWED_DRIVERNAMES:
-        raise DatabaseConnectionError(
-            "Only PostgreSQL connections are supported right now "
-            "(a postgresql:// URL)."
-        )
+    try:
+        engine = create_engine(url, pool_recycle=300, connect_args=dict(dialect.connect_args))
+    except Exception as e:
+        raise DatabaseConnectionError(f"Could not set up that connection: {e}")
 
-    return create_engine(
-        database_url,
-        pool_recycle=300,
-        connect_args={"connect_timeout": _CONNECT_TIMEOUT_SECONDS},
-    )
+    return engine, dialect
 
 
-def _test_and_introspect(engine: Engine) -> DatabaseSchema:
+def _test_and_introspect(engine: Engine) -> tuple[DatabaseSchema, str | None]:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
 
-        return get_database_schema(engine)
+        schema_name = default_schema_name(engine)
+        return get_database_schema(engine, schema_name), schema_name
 
     except SQLAlchemyError as e:
         engine.dispose()
         raise DatabaseConnectionError(f"Could not connect to that database: {e.orig or e}")
 
 
-def _connect_and_introspect(database_url: str) -> tuple[Engine, DatabaseSchema]:
-    engine = _build_engine(database_url)
-    return engine, _test_and_introspect(engine)
+def _connect_and_introspect(database_url: str | URL) -> tuple[Engine, Dialect, DatabaseSchema, str | None]:
+    engine, dialect = _build_engine(database_url)
+    schema, schema_name = _test_and_introspect(engine)
+    return engine, dialect, schema, schema_name
 
 
-def _make_connection(engine: Engine, schema: DatabaseSchema, label: str) -> SessionConnection:
+def _make_connection(
+    engine: Engine, dialect: Dialect, schema: DatabaseSchema, schema_name: str | None, label: str
+) -> SessionConnection:
     return SessionConnection(
         engine=engine,
         schema=schema,
         schema_text=schema_to_text(schema),
         label=label,
         is_default=False,
+        dialect=dialect,
+        schema_name=schema_name,
     )
+
+
+@dataclass
+class ConnectionCheck:
+    label: str
+    dialect: Dialect
+    table_count: int
+
+
+def check_connection(database_url: str | URL) -> ConnectionCheck:
+    """Try a connection without saving it, so the UI can say whether it works."""
+
+    engine, dialect, schema, _schema_name = _connect_and_introspect(database_url)
+    try:
+        return ConnectionCheck(_label_for(database_url), dialect, len(schema.tables))
+    finally:
+        engine.dispose()
 
 
 def ensure_connections_schema() -> None:
@@ -187,19 +206,20 @@ def _load_saved_url(session_id: str) -> str | None:
     return url
 
 
-def connect(session_id: str, database_url: str, label: str | None = None) -> SessionConnection:
+def connect(session_id: str, database_url: str | URL, label: str | None = None) -> SessionConnection:
     """Connect a session to a new database, replacing any existing one."""
 
-    encrypted_url = encrypt(database_url)  # fails fast if APP_SECRET_KEY is unset
+    url_text = database_url if isinstance(database_url, str) else database_url.render_as_string(hide_password=False)
+    encrypted_url = encrypt(url_text)  # fails fast if APP_SECRET_KEY is unset
 
-    engine, schema = _connect_and_introspect(database_url)
+    engine, dialect, schema, schema_name = _connect_and_introspect(database_url)
     resolved_label = label or _label_for(database_url)
 
     old = _cache.get(session_id)
     if old is not None:
         old.engine.dispose()
 
-    connection = _make_connection(engine, schema, resolved_label)
+    connection = _make_connection(engine, dialect, schema, schema_name, resolved_label)
     _cache[session_id] = connection
     _save_connection_row(session_id, encrypted_url, resolved_label)
 
@@ -243,8 +263,8 @@ def get_or_default(session_id: str) -> SessionConnection:
         _no_saved_connection.add(session_id)
         return get_default_connection()
 
-    engine, schema = _connect_and_introspect(saved_url)
-    connection = _make_connection(engine, schema, _label_for(saved_url))
+    engine, dialect, schema, schema_name = _connect_and_introspect(saved_url)
+    connection = _make_connection(engine, dialect, schema, schema_name, _label_for(saved_url))
 
     _cache[session_id] = connection
     return connection

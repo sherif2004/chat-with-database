@@ -15,6 +15,7 @@ import {
 } from "./api";
 import AuthScreen from "./components/AuthScreen";
 import Composer from "./components/Composer";
+import ConnectPage from "./components/ConnectPage";
 import DatabasePanel from "./components/DatabasePanel";
 import Icon from "./components/Icon";
 import Message from "./components/Message";
@@ -80,12 +81,11 @@ function ChatApp({ user, onSignedOut }) {
   const [sending, setSending] = useState(false);
   const [stage, setStage] = useState(null);
   const [connection, setConnection] = useState(null);
-  const [connecting, setConnecting] = useState(false);
   const [starters, setStarters] = useState(null);
   const [followups, setFollowups] = useState([]);
   const [railOpen, setRailOpen] = useState(false);
   const [dbOpen, setDbOpen] = useState(false);
-  const [view, setView] = useState("chat"); // chat | users | activity
+  const [view, setView] = useState("chat"); // chat | users | activity | connect
 
   const bottomRef = useRef(null);
   const composerRef = useRef(null);
@@ -355,19 +355,14 @@ function ChatApp({ user, onSignedOut }) {
     [fail, startNewChat]
   );
 
-  async function handleConnect(databaseUrl, label) {
-    setConnecting(true);
-
-    try {
-      const info = await connectDatabase(databaseUrl, label);
-      setConnection(info);
-      setTimeline((prev) => [
-        ...prev,
-        { id: newId(), type: "notice", text: `Switched to ${info.label}` },
-      ]);
-    } finally {
-      setConnecting(false);
-    }
+  async function handleConnect(payload) {
+    const info = await connectDatabase(payload);
+    setConnection(info);
+    setTimeline((prev) => [
+      ...prev,
+      { id: newId(), type: "notice", text: `Switched to ${info.label}` },
+    ]);
+    setView("chat");
   }
 
   const handleSignOut = useCallback(async () => {
@@ -564,6 +559,14 @@ function ChatApp({ user, onSignedOut }) {
               onUnauthorized={onSignedOut}
             />
           )}
+          {view === "connect" && (
+            <ConnectPage
+              onOpenRail={() => setRailOpen(true)}
+              onBack={() => setView("chat")}
+              onConnect={handleConnect}
+              onUnauthorized={onSignedOut}
+            />
+          )}
           {view === "activity" && (
             <ActivityPage
               me={user}
@@ -589,8 +592,10 @@ function ChatApp({ user, onSignedOut }) {
             </button>
             <DatabasePanel
               connection={connection}
-              connecting={connecting}
-              onConnect={handleConnect}
+              onOpenConnect={() => {
+                closeDatabase();
+                setView("connect");
+              }}
               canConnect={can(user, "connection:write")}
             />
           </div>
