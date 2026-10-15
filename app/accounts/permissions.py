@@ -2,7 +2,6 @@ USER = "user"
 SUPERVISOR = "supervisor"
 ADMIN = "admin"
 
-ROLES = (USER, SUPERVISOR, ADMIN)
 
 _USER_PERMISSIONS = frozenset({"chat", "conversation:own"})
 _SUPERVISOR_PERMISSIONS = _USER_PERMISSIONS | {

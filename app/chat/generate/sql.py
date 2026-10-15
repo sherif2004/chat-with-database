@@ -20,6 +20,24 @@ class SQLGeneration(_SQLDraft):
     usage: TokenUsage | None = None
 
 
+def _generate(prompt: str) -> SQLGeneration:
+    """Asks the model and fails closed: anything but a usable statement
+    becomes a "can't answer" result carrying the model's explanation."""
+
+    draft, usage = ask_structured(prompt, _SQLDraft, max_output_tokens=1000)
+
+    if draft is None or not draft.can_answer or not (draft.sql or "").strip():
+        return SQLGeneration(
+            can_answer=False,
+            cannot_answer_message=(draft.cannot_answer_message if draft else None) or None,
+            clarification_question=(draft.clarification_question if draft else None) or None,
+            prompt=prompt,
+            usage=usage,
+        )
+
+    return SQLGeneration(can_answer=True, sql=draft.sql.strip(), prompt=prompt, usage=usage)
+
+
 def generate_sql(
     question,
     schema_text,
@@ -33,36 +51,11 @@ def generate_sql(
     the failure fed back to the model."""
 
     prompt = sql_prompt(question, schema_text, examples or [], history or [], previous_attempt, dialect)
-    draft, usage = ask_structured(prompt, _SQLDraft, max_output_tokens=1000)
-
-    if draft is None or not draft.can_answer or not (draft.sql or "").strip():
-        message = draft.cannot_answer_message if draft else None
-        clarification = draft.clarification_question if draft else None
-        return SQLGeneration(
-            can_answer=False,
-            cannot_answer_message=message or None,
-            clarification_question=clarification or None,
-            prompt=prompt,
-            usage=usage,
-        )
-
-    return SQLGeneration(can_answer=True, sql=draft.sql.strip(), prompt=prompt, usage=usage)
+    return _generate(prompt)
 
 
 def generate_write_sql(question, schema_text, history: list[dict] | None = None) -> SQLGeneration:
     """One INSERT/UPDATE/DELETE for an admin's request. Only ever previewed
     here; nothing runs until it is confirmed."""
 
-    prompt = write_sql_prompt(question, schema_text, history or [])
-    draft, usage = ask_structured(prompt, _SQLDraft, max_output_tokens=1000)
-
-    if draft is None or not draft.can_answer or not (draft.sql or "").strip():
-        return SQLGeneration(
-            can_answer=False,
-            cannot_answer_message=(draft.cannot_answer_message if draft else None) or None,
-            clarification_question=(draft.clarification_question if draft else None) or None,
-            prompt=prompt,
-            usage=usage,
-        )
-
-    return SQLGeneration(can_answer=True, sql=draft.sql.strip(), prompt=prompt, usage=usage)
+    return _generate(write_sql_prompt(question, schema_text, history or []))

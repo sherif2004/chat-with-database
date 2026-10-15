@@ -4,7 +4,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
-from app.dependencies import SESSION_COOKIE, current_user
+from app.dependencies import SESSION_COOKIE, client_ip, current_user
 from app.accounts.users import (
     EmailTaken,
     User,
@@ -63,14 +63,10 @@ def _start_session(response: Response, user: User) -> None:
     )
 
 
-def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
-
-
 @router.post("/signup", response_model=UserInfo, status_code=201)
 def signup(credentials: Credentials, request: Request, response: Response):
 
-    signup_key = f"signup:ip:{_client_ip(request)}"
+    signup_key = f"signup:ip:{client_ip(request)}"
 
     if limiter.count(signup_key) >= SIGNUP_LIMIT_PER_IP:
         raise HTTPException(
@@ -94,7 +90,7 @@ def signup(credentials: Credentials, request: Request, response: Response):
     try:
         user = create_user(email, hash_password(credentials.password))
         _start_session(response, user)
-        record_activity("signup", actor=user, ip=_client_ip(request))
+        record_activity("signup", actor=user, ip=client_ip(request))
     except EmailTaken:
         raise HTTPException(status_code=409, detail="An account with that email already exists.")
     except SQLAlchemyError:
@@ -108,7 +104,7 @@ def signup(credentials: Credentials, request: Request, response: Response):
 def login(credentials: Credentials, request: Request, response: Response):
 
     email = normalize_email(credentials.email)
-    keys = login_keys(_client_ip(request), email)
+    keys = login_keys(client_ip(request), email)
 
     if any(limiter.count(key) >= limit for key, limit in keys.items()):
         raise HTTPException(
@@ -133,7 +129,7 @@ def login(credentials: Credentials, request: Request, response: Response):
             actor=found[0] if found else None,
             actor_email=email,
             detail="Wrong password" if found else "No such account",
-            ip=_client_ip(request),
+            ip=client_ip(request),
         )
         raise HTTPException(status_code=401, detail=_BAD_LOGIN)
 
@@ -143,7 +139,7 @@ def login(credentials: Credentials, request: Request, response: Response):
 
     try:
         _start_session(response, user)
-        record_activity("login", actor=user, ip=_client_ip(request))
+        record_activity("login", actor=user, ip=client_ip(request))
     except SQLAlchemyError:
         logger.exception("Could not create session")
         raise HTTPException(status_code=503, detail="Couldn't sign in right now, please try again.")
@@ -163,7 +159,7 @@ def logout(
             who = get_user_by_token(session)
             delete_session(session)
             if who:
-                record_activity("logout", actor=who, ip=_client_ip(request))
+                record_activity("logout", actor=who, ip=client_ip(request))
         except SQLAlchemyError:
             logger.exception("Could not delete session")
 

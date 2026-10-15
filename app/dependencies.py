@@ -1,4 +1,4 @@
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Cookie, Depends, HTTPException, Request
 
 from app.accounts.users import User, get_user_by_token
 from app.accounts.permissions import has_permission
@@ -40,3 +40,7 @@ def owner_key(user: User) -> str:
     accounts existed, when clients chose their own session_id."""
 
     return f"u:{user.id}"
+
+
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"

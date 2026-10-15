@@ -49,3 +49,16 @@ class GraphState(TypedDict, total=False):
     # Terminal fields, set by whichever node ends the graph
     intent: str
     result: Result
+
+
+def deps(config):
+    cfg = config["configurable"]
+    return cfg["timings"], cfg["debug"], cfg["background_tasks"]
+
+
+def get_connection(config):
+    """The resolved SessionConnection, held in a plain mutable dict on
+    `config` rather than in graph state: it wraps a live SQLAlchemy engine,
+    which doesn't belong in state alongside plain data — it's re-resolved
+    (cheaply, from a cache) every turn anyway."""
+    return config["configurable"]["session_data"].get("connection")

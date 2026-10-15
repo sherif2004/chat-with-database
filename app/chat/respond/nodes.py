@@ -1,9 +1,8 @@
 """Phase 4, respond: turn the query results into the reply."""
 
-from app.chat.common import deps, record_usage
-from app.chat.respond.answer import generate_answer
-from app.chat.schemas import QueryTable, TableResult
-from app.chat.state import GraphState
+from app.chat.respond.answer import ANSWER_ROW_LIMIT, generate_answer
+from app.chat.schemas import QueryTable, TableResult, record_usage
+from app.chat.state import GraphState, deps
 
 
 def generate_answer_node(state: GraphState, config) -> dict:
@@ -13,7 +12,11 @@ def generate_answer_node(state: GraphState, config) -> dict:
     queries = state["queries"]
 
     answer_inputs = [
-        {"sql": stmt, "rows": [dict(zip(query.columns, row)) for row in query.rows]}
+        {
+            "sql": stmt,
+            "rows": [dict(zip(query.columns, row)) for row in query.rows[:ANSWER_ROW_LIMIT]],
+            "total_rows": len(query.rows),
+        }
         for stmt, query in zip(statements, queries)
     ]
 

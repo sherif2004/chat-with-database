@@ -1,17 +1,9 @@
 """Phase 2, generate: find similar past questions and have the model write SQL."""
 
-from app.chat.common import (
-    CANNOT_ANSWER_MESSAGE,
-    CANNOT_CHANGE_MESSAGE,
-    get_connection,
-    deps,
-    message_state,
-    record_usage,
-)
 from app.chat.generate.examples import find_similar
 from app.chat.generate.sql import generate_sql, generate_write_sql
-from app.chat.schemas import ExampleUsed
-from app.chat.state import GraphState
+from app.chat.schemas import CANNOT_ANSWER_MESSAGE, CANNOT_CHANGE_MESSAGE, ExampleUsed, message_state, record_usage
+from app.chat.state import GraphState, deps, get_connection
 
 
 def retrieve_examples_node(state: GraphState, config) -> dict:

@@ -93,3 +93,28 @@ class ConfirmChangeRequest(BaseModel):
 class ConfirmChangeResponse(BaseModel):
     message: str
     affected_rows: int
+
+
+# --- Shared by the pipeline nodes ---
+
+GREETING_MESSAGE = (
+    "Hello! Ask me a question about the data and I will look it up for you."
+)
+OFF_TOPIC_MESSAGE = "Your question is not related to the data."
+UNSAFE_MESSAGE = "I can only answer read-only questions about the data."
+CANNOT_ANSWER_MESSAGE = (
+    "I couldn't answer that: the data doesn't contain the information "
+    "needed for this question."
+)
+CANNOT_CHANGE_MESSAGE = (
+    "I couldn't prepare that change: the data doesn't contain what it refers to."
+)
+
+
+def record_usage(debug, step, usage):
+    if usage is not None:
+        debug.token_usage[step] = usage
+
+
+def message_state(intent: str, text: str) -> dict:
+    return {"intent": intent, "result": MessageResult(message=text)}

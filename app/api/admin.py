@@ -5,11 +5,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.chat import controller as chat_controller
 from app.chat.controller import ConversationNotFound
-from app.dependencies import owner_key, require_permission
+from app.dependencies import client_ip, owner_key, require_permission
 from app.databases.connection import forget_connection
 from app.accounts.activity import (
     EVENTS,
-    ActivityEntry,
     ActivitySummary,
     activity_summary,
     list_activity,
@@ -34,10 +33,6 @@ router = APIRouter(prefix="/admin")
 
 _NO_USER = HTTPException(status_code=404, detail="User not found.")
 _LAST_ADMIN = HTTPException(status_code=409, detail="There must be at least one admin.")
-
-
-def _ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
 
 
 def _account(user: User) -> AccountInfo:
@@ -70,7 +65,7 @@ def change_role(
 
     logger.info("Admin %s set user %s to role %s", admin.id, user.id, user.role)
     record_activity(
-        "role_changed", actor=admin, target=user, detail=f"Now {user.role}", ip=_ip(request)
+        "role_changed", actor=admin, target=user, detail=f"Now {user.role}", ip=client_ip(request)
     )
     return _account(user)
 
@@ -100,7 +95,7 @@ def delete_user(
         actor=admin,
         target=victim,
         detail=f"Deleted {victim.email}" if victim else None,
-        ip=_ip(request),
+        ip=client_ip(request),
     )
 
 
@@ -118,7 +113,7 @@ def user_conversations(
 
     record_activity(
         "chat_viewed", actor=viewer, target=target, detail="Browsed their conversation list",
-        ip=_ip(request),
+        ip=client_ip(request),
     )
 
     return list_conversations(owner_key(target))
@@ -156,7 +151,7 @@ def user_messages(
         actor=viewer,
         target=target,
         detail=f"Opened \u201c{conversation.title}\u201d" if conversation else None,
-        ip=_ip(request),
+        ip=client_ip(request),
     )
 
     return entries

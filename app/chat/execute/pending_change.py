@@ -6,7 +6,7 @@ import time
 import redis
 
 from app.config import settings
-from app.accounts.auth import token_digest
+from app.shared.crypto import token_digest
 from app.shared.cache import client
 
 logger = logging.getLogger(__name__)

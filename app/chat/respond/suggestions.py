@@ -5,7 +5,6 @@ import logging
 import redis
 from pydantic import BaseModel
 
-from app.config import settings
 from app.shared.cache import client
 from app.shared.llm import LIGHT_MODEL, MODEL, LLMUnavailable, ask_structured
 from app.chat.respond.prompts import followups_prompt, starters_prompt

@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.shared.database import app_engine, retry_on_disconnect, run_ddl
-from app.accounts.auth import token_digest
+from app.shared.crypto import token_digest
 
 logger = logging.getLogger(__name__)
 

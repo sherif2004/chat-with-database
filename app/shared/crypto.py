@@ -31,3 +31,7 @@ def decrypt(token: str) -> str | None:
         return _fernet().decrypt(token.encode()).decode()
     except InvalidToken:
         return None
+
+
+def token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()

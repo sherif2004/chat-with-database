@@ -3,20 +3,12 @@ confirmation."""
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.chat.common import (
-    CANNOT_ANSWER_MESSAGE,
-    CANNOT_CHANGE_MESSAGE,
-    UNSAFE_MESSAGE,
-    get_connection,
-    deps,
-    message_state,
-)
 from app.chat.errors import GuardrailError, UnknownTableError
 from app.chat.execute import pending_change
 from app.chat.execute.sql_guard import validate_sql, validate_write_sql
 from app.chat.generate.examples import remember
-from app.chat.schemas import ChangeResult
-from app.chat.state import GraphState
+from app.chat.schemas import CANNOT_ANSWER_MESSAGE, CANNOT_CHANGE_MESSAGE, ChangeResult, UNSAFE_MESSAGE, message_state
+from app.chat.state import GraphState, deps, get_connection
 from app.config import settings
 from app.databases.query import dry_run_write, execute_sql
 

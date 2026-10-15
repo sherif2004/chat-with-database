@@ -11,8 +11,8 @@ def generate_answer(
     question,
     queries: list[dict]
 ) -> tuple[str, str, TokenUsage | None]:
-    """`queries` is [{"sql", "rows"}, ...], one entry per executed
-    statement; `rows` is trimmed to ANSWER_ROW_LIMIT here.
+    """`queries` is [{"sql", "rows", "total_rows"}, ...], one entry per
+    executed statement; `rows` holds at most ANSWER_ROW_LIMIT rows.
 
     Summarizing rows into a sentence looks easy, but LIGHT_MODEL proved
     unreliable at the one rule that matters most here — answering in the
@@ -21,12 +21,7 @@ def generate_answer(
     strengthening the prompt). Runs on MODEL instead.
     """
 
-    trimmed = [
-        {"sql": q["sql"], "rows": q["rows"][:ANSWER_ROW_LIMIT], "total_rows": len(q["rows"])}
-        for q in queries
-    ]
-
-    prompt = answer_prompt(question, trimmed)
+    prompt = answer_prompt(question, queries)
     answer, usage = ask_llm(prompt, max_output_tokens=800, model=MODEL)
 
     return answer, prompt, usage

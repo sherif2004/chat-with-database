@@ -1,6 +1,6 @@
 """Prompts for the "generate" phase: writing SQL for a question."""
 
-from app.chat.execute.sql_guard import MAX_STATEMENTS
+from app.config import MAX_STATEMENTS
 from app.databases.engines import POSTGRES, Dialect
 
 

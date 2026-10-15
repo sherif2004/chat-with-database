@@ -2,9 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.shared.llm import LIGHT_MODEL, ask_structured
 from app.chat.understand.prompts import router_prompt
-from app.shared.llm import TokenUsage
+from app.shared.llm import LIGHT_MODEL, TokenUsage, ask_structured
 
 
 class RouteDecision(BaseModel):

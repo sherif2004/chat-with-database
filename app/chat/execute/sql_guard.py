@@ -4,6 +4,7 @@ from sqlglot.errors import SqlglotError
 
 from app.databases.engines import POSTGRES, Dialect
 from app.chat.errors import GuardrailError, UnknownTableError
+from app.config import MAX_STATEMENTS
 
 # Anything that can write, change structure, or run commands.
 _FORBIDDEN_NODES = tuple(
@@ -19,7 +20,6 @@ _FORBIDDEN_NODES = tuple(
 
 # Upper bound on how many SELECTs one question may run, so a question that
 # genuinely needs several independent result sets is still cheap and fast.
-MAX_STATEMENTS = 5
 
 
 def _function_name(func: exp.Expression) -> str:

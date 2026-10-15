@@ -2,6 +2,10 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Most SQL statements one question may produce (checked by the SQL guard,
+# stated in the SQL prompt).
+MAX_STATEMENTS = 5
+
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 

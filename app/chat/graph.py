@@ -6,7 +6,6 @@ phase's logic lives in its own folder:
 
 from langgraph.graph import END, StateGraph
 
-from app.chat.common import has_result
 from app.chat.execute.nodes import (
     SQL_MAX_ATTEMPTS,
     execute_sql_node,
@@ -26,6 +25,10 @@ from app.chat.understand.nodes import (
     resolve_connection_node,
     route_after_context_node,
 )
+
+
+def has_result(state: GraphState) -> str:
+    return "end" if state.get("result") is not None else "next"
 
 
 def _route_after_cache(state: GraphState):

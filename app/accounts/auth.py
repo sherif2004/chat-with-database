@@ -60,10 +60,6 @@ def new_session_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def token_digest(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 class AttemptLimiter:
     """Counts attempts per key inside a fixed window. Backed by Redis so the
     counts survive restarts and are shared across workers; if Redis is down
